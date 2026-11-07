@@ -1,0 +1,96 @@
+# Khatt model parameters.
+# Uncertain values: {low, central, high, source}. "assumption" = invented, to be replaced.
+# Plain scalars are fixed settings (thresholds, radii) and are not sampled in Monte Carlo.
+# Fitted values in data/processed/calibrated.json override spending.beta (low/high = ±50 %).
+
+area:
+  bbox: [30.85, 29.80, 31.85, 30.35]   # lng_min, lat_min, lng_max, lat_max
+  h3_res: 8
+  h3_res_fine: 9
+
+routing:
+  departure_date: "2021-03-16"     # Tuesday inside both feeds (bus 2021-01..2022-06, metro 2020-09..2021-09)
+  departure_time: "08:00"
+  departure_time_window_min: 60
+  irregularity_factor: {metro: 1.0, bus: 1.3, microbus: 1.5}   # E[W] = h/2 * (1 + CV^2)
+  unreachable_min: 999.0
+  stop_access_radius_m: 600        # fallback graph: stops linked to cells whose centroid is this close
+  default_headway_min: 15          # fallback graph: when GTFS gives no frequency
+
+walk:
+  speed_kmh: {low: 4.0, central: 4.5, high: 5.0, source: assumption}
+  circuity: {low: 1.2, central: 1.3, high: 1.4, source: assumption}
+
+access:
+  intracell_min: {low: 3, central: 4, high: 6, source: "approx. walk within a res-8 cell"}
+
+line:
+  headway_min: {low: 3, central: 4, high: 6, source: assumption}
+  speed_kmh: {low: 30, central: 35, high: 40, source: "assumption; tune vs existing lines"}
+  dwell_s: {low: 20, central: 30, high: 45, source: assumption}
+  board_penalty_min: {low: 2, central: 3, high: 5, source: assumption}
+  max_snap_m: 200                  # warn when a station is further than this from the walk network
+  max_total_stations: 150          # Floyd–Warshall size limit
+
+spending:
+  alpha: {low: 0.8, central: 1.0, high: 1.2, source: assumption}
+  # Distance-decay per minute. Replaced by calibrated values (make calibrate).
+  beta:
+    daily: {low: 0.075, central: 0.15, high: 0.225, source: "assumption until calibrated"}
+    comp: {low: 0.025, central: 0.05, high: 0.075, source: "assumption until calibrated"}
+    eat: {low: 0.04, central: 0.08, high: 0.12, source: "assumption until calibrated"}
+  target_mean_trip_min: {daily: 10, comp: 30, eat: 20}
+  max_trip_min: 120
+  induced_pct: {low: 0.0, central: 0.0, high: 0.05, source: assumption}
+  share_09_electronics: {low: 0.2, central: 0.3, high: 0.4, source: assumption}
+  rwi_scale: {low: 0.3, central: 0.5, high: 0.8, source: "assumption: wealth factor = exp(scale × Meta RWI)"}
+  local_radius_m: 1500
+  n_flows: 50                      # top origin→street shifts returned for the ArcLayer
+
+streets:
+  eps_m: {low: 100, central: 150, high: 250, source: assumption}
+  min_shops: 15
+  footprint_join_m: 20
+
+shops:
+  min_confidence: 0.5
+  dedupe_radius_m: 40
+  name_similarity: 0.8
+
+footfall:
+  metro_daily_riders: {low: 4000000, central: 4500000, high: 5000000, source: "Ahram Online Dec 2025"}
+  catchment_min: 10
+  reference_use_share: {low: 0.2, central: 0.3, high: 0.4, source: assumption}
+  use_margin_min: 0.5              # a trip "uses the new line" if T1 < T0 - this
+  usefulness_clip: [0.2, 2.0]
+  passby_radius_m: 400
+  passby_decay_m: {low: 150, central: 200, high: 300, source: assumption}
+  buy_rate: {low: 0.02, central: 0.05, high: 0.10, source: assumption}
+  basket_egp: {low: 15, central: 30, high: 50, source: "assumption, 2021 EGP"}
+  days_per_year: 365
+
+rents:
+  radius_m: 1500
+  elasticity: {low: 0.1, central: 0.3, high: 0.6, source: "placeholder; replace with published capitalisation estimates"}
+  footfall_term: {low: 0.0, central: 0.1, high: 0.2, source: "assumption; rent_pct per unit pass-by revenue share"}
+  rent_cost_share: {low: 0.1, central: 0.2, high: 0.3, source: assumption}
+  gross_margin: {low: 0.15, central: 0.25, high: 0.35, source: assumption}
+  red_threshold: 0.02
+  short_run_share: 0.3
+
+informal:
+  max_pair_gap: 15
+  switch_margin_min: 5
+  compete_threshold: 0.3
+  feeder_radius_m: 400
+  vendors_per_1000_exits: {low: 1, central: 2, high: 4, source: assumption}
+  vendors_per_route: {low: 2, central: 6, high: 12, source: "assumption; pitches at a route's busiest stops"}
+
+output:
+  min_abs_dR_pct: 0.1              # only streets with |dR_pct| above this (or risk != green) are returned
+  min_abs_hex_change: 0.001        # only hexes with |d_spend_reach| or |rent_pct| above this are returned
+  min_footfall_daily: 1.0
+
+montecarlo:
+  n_runs: 200
+  seed: 42
