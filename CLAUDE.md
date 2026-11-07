@@ -155,6 +155,13 @@ Projected (EPSG:32636) OSMnx graph, largest strongly connected component, edge a
 ### `r9_near.parquet` (built lazily is fine)
 Resolution-9 cells with `pop`, `parent_r8_idx`, used for station catchments and fine-grained footfall/rent output.
 
+### Additional files
+- `existing_lines.geojson` — existing rail lines as LineStrings (`line` property), written by 09, served by `/baseline`.
+- `calibrated.json` — fitted `beta` per category (§13); overrides `spending.beta` in params.
+- `T0.json` — how `T0.npy` was built (r5py or fallback, feeds, runtime).
+- `walk_csr.npz` — cache of `walk_graph.pkl` in CSR form (rebuilt automatically when the pickle is newer).
+- `SYNTHETIC` — marker present only in the invented test world (`python -m khatt.synthetic`).
+
 ---
 
 ## 6. Pipeline details

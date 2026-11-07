@@ -11,3 +11,10 @@ web/dist/
 .DS_Store
 .env
 .numba_cache/
+# generated data (large or invented)
+data/synthetic/
+data/processed/T0*.npy
+data/processed/T0*.json
+data/processed/walk_*
+scenarios/mock/
+cache/
