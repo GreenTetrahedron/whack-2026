@@ -1,0 +1,47 @@
+# Hero scenarios (CLAUDE.md §17). Stations are {lat, lng} in running order.
+# `underserved` is generated programmatically when `auto: underserved` is set.
+# Others need coordinates from a human; scenarios with fewer than 2 stations per line are skipped.
+
+scenarios:
+  - id: underserved
+    name: "Underserved corridor"
+    description: "Line through the densest area furthest from any existing station"
+    auto: underserved
+    lines: []
+
+  - id: orbital
+    name: "Orbital link"
+    description: "Links the outer ends of Lines 1, 2 and 3 (interchange synergy)"
+    lines:
+      - line_id: O
+        name: "Orbital"
+        stations: []
+
+  - id: two_way_road
+    name: "Two-way road"
+    description: "Fast radial line into Downtown passing a local centre"
+    lines:
+      - line_id: R
+        name: "Radial"
+        speed_kmh: 40
+        stations: []
+
+  - id: synergy_pair
+    name: "Synergy pair"
+    description: "Two lines evaluated alone and together"
+    attribution: true
+    lines:
+      - line_id: A
+        name: "Line A"
+        stations: []
+      - line_id: B
+        name: "Line B"
+        stations: []
+
+  - id: faisal_haram
+    name: "Faisal / Haram"
+    description: "Optional reveal: along Faisal and Haram streets"
+    lines:
+      - line_id: F
+        name: "Faisal"
+        stations: []

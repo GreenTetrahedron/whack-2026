@@ -1,0 +1,48 @@
+# Lines missing from the 2022 TfC metro GTFS (CLAUDE.md §6, 07 step 4).
+# A human fills lat/lng (WGS84) for each station, in running order. Lines with any empty
+# coordinate are skipped with a warning. These become the `manual:` GTFS feed.
+# Station names from public sources; coordinates intentionally blank — do not guess them.
+
+lines:
+  - route_id: L3W
+    name: "Line 3 west branch (Kit Kat – Rod El Farag Axis), opened Oct 2022"
+    route_type: 1
+    headway_min: 6
+    speed_kmh: 35
+    dwell_s: 30
+    stations:
+      - {name: "Kit Kat", lat: , lng: }
+      - {name: "Sudan", lat: , lng: }
+      - {name: "Imbaba", lat: , lng: }
+      - {name: "El Bohy", lat: , lng: }
+      - {name: "El Qawmia", lat: , lng: }
+      - {name: "Ring Road", lat: , lng: }
+      - {name: "Rod El Farag Corridor", lat: , lng: }
+
+  - route_id: L3CU
+    name: "Line 3 to Cairo University (Kit Kat – Cairo University), opened May 2024"
+    route_type: 1
+    headway_min: 6
+    speed_kmh: 35
+    dwell_s: 30
+    stations:
+      - {name: "Kit Kat", lat: , lng: }
+      - {name: "Tawfikia", lat: , lng: }
+      - {name: "Wadi El Nil", lat: , lng: }
+      - {name: "Gamaat El Dowal El Arabia", lat: , lng: }
+      - {name: "Bulaq El Dakrour", lat: , lng: }
+      - {name: "Cairo University", lat: , lng: }
+
+  # Optional (enable by adding coordinates):
+  # - route_id: LRT
+  #   name: "Light Rail Transit (Adly Mansour – 10th of Ramadan)"
+  #   route_type: 2
+  #   headway_min: 10
+  #   speed_kmh: 60
+  #   stations: []
+  # - route_id: MONO_E
+  #   name: "East Nile Monorail, opened Mar 2026"
+  #   route_type: 12
+  #   headway_min: 8
+  #   speed_kmh: 45
+  #   stations: []
