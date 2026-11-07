@@ -1,0 +1,1 @@
+"""The four impact models."""
