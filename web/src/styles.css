@@ -427,6 +427,7 @@ td.name {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  z-index: 5;
 }
 .legend .dot,
 .legend .bar {

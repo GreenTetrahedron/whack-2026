@@ -34,20 +34,7 @@ export default function Results(props: {
   return (
     <>
       <section>
-        <h2>3 · What the backend did</h2>
-        {props.stale && <div className="warnbox">The lines or assumptions changed since this run — press Construct again.</div>}
-        <Timings result={result} roundTripMs={props.roundTripMs} />
-        {result.warnings.length > 0 && (
-          <ul className="warnings">
-            {result.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2>4 · Results</h2>
+        <h2>3 · Results</h2>
         <div className="row">
           <div className="seg">
             <button className={props.view === "before" ? "on" : ""} onClick={() => props.setView("before")}>
