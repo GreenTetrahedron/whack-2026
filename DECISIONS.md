@@ -161,3 +161,10 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - **08_baseline_matrix**: T0 built with r5py (72 unroutable cells from scipy fallback) from ['bus.zip', 'metro.zip'] _(2026-11-08 01:17)_
 - **08_baseline_matrix**: r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min _(2026-11-08 01:36)_
 - **08_baseline_matrix**: T0 built with r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min from ['bus.zip', 'metro.zip'] _(2026-11-08 01:36)_
+
+## Data storage
+
+- `data/raw/` is committed through Git LFS (about 360 MB) so teammates don't have to re-run the downloads,
+  overriding CLAUDE.md rule 10. This is acceptable because the repo is private (TfC CC BY-NC, OSM ODbL,
+  WorldPop CC BY, Overture CDLA). The full `egypt-latest.osm.pbf` (177 MB) is left out: only the
+  clipped `cairo.osm.pbf` is needed.
