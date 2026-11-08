@@ -200,6 +200,14 @@ def test_gtfs_checks(tmp_path):
     assert set(gtfs.read_feed(out)) == set(pre)
 
 
+def test_trips_running(tmp_path):
+    feed = gtfs.read_feed(_tiny_feed(tmp_path))
+    h = 3600
+    assert gtfs.trips_running(feed, 8 * h, 9 * h) == (3, 3)
+    assert gtfs.trips_running(feed, 10 * h, 11 * h) == (1, 3), "t2's window ends at 10:00"
+    assert gtfs.trips_running(feed, 23 * h, 24 * h) == (0, 3), "t1's 23:58 template is unused"
+
+
 def test_representative_routes(tmp_path):
     feed = gtfs.read_feed(_tiny_feed(tmp_path))
     gtfs.fix_stop_coordinates(feed, (30.85, 29.80, 31.85, 30.35))

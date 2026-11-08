@@ -95,3 +95,25 @@ def test_fill_from_fallback():
     assert out[1, 3] == 90 and out[3, 0] == 60, "gaps filled where the fallback is <= 120 min"
     assert out[0, 3] == 999, "fallback > 120 min stays unreachable"
     assert n_pairs == 2
+
+
+def test_routing_points_snap_to_walk_network():
+    import numpy as np
+
+    from khatt.engine.catchment import WalkGraph
+    from khatt.geo import haversine_m, to_utm
+
+    mod = _load(ROOT / "pipeline" / "08_baseline_matrix.py")
+    # a two-node walk graph near Tahrir; one cell 150 m away, one 5 km away
+    nlat, nlng = np.array([30.0444, 30.0450]), np.array([31.2357, 31.2360])
+    x, y = to_utm(nlat, nlng)
+    g = WalkGraph.from_edges(np.asarray(x), np.asarray(y), [0, 1], [1, 0], [1.0, 1.0],
+                             np.full(2, -1))
+    lat, lng = np.array([30.0457, 30.0900]), np.array([31.2370, 31.2357])
+    rlat, rlng, moved = mod.routing_points(lat, lng, g, max_m=2500)
+    assert np.allclose([rlat[0], rlng[0]], [nlat[1], nlng[1]], atol=1e-6), "moved to nearest node"
+    assert 100 < moved[0] < 200
+    assert (rlat[1], rlng[1], moved[1]) == (lat[1], lng[1], 0.0), "too far: centroid kept"
+    assert abs(haversine_m(rlat[0], rlng[0], lat[0], lng[0]) - moved[0]) < 2, "moved_m in metres"
+    same = mod.routing_points(lat, lng, None, 2500)
+    assert same[0] is lat and not same[2].any(), "no walk graph: centroids unchanged"

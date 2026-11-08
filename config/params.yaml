@@ -11,7 +11,8 @@ area:
 
 routing:
   departure_date: "2021-03-16"     # Tuesday inside both feeds (bus 2021-01..2022-06, metro 2020-09..2021-09)
-  departure_time: "08:00"
+  departure_time: "10:00"           # spec says 08:00, but every TfC bus/microbus frequency runs 10:00–15:00 only (see DECISIONS.md)
+  min_service_share: 0.5           # 08 aborts if a feed runs fewer trips than this in the departure window
   departure_time_window_min: 60
   irregularity_factor: {metro: 1.0, bus: 1.3, microbus: 1.5}   # E[W] = h/2 * (1 + CV^2)
   unreachable_min: 999.0

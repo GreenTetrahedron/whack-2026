@@ -65,7 +65,7 @@ def write_feed(feed: Feed, path: Path) -> None:
 
 def to_seconds(t) -> float:
     """'HH:MM:SS' (hours may exceed 24) → seconds; NaN for blanks."""
-    if t is None:
+    if t is None or (isinstance(t, float) and np.isnan(t)):
         return np.nan
     s = str(t).strip()
     if not s:
@@ -249,6 +249,31 @@ def _headway_at(freq: pd.DataFrame | None, trip_ids, at_s: float) -> float | Non
     cover = f[(start <= at_s) & (end > at_s)]
     use = cover if not cover.empty else f
     return float(pd.to_numeric(use["headway_secs"], errors="coerce").min() / 60.0)
+
+
+def trips_running(feed: Feed, start_s: float, end_s: float) -> tuple[int, int]:
+    """(trips in service at some point in [start_s, end_s), all trips). A frequency-based trip
+    runs if one of its frequency windows overlaps the interval; a scheduled trip if it is under
+    way. Catches a routing window outside a feed's service hours (the TfC bus feed only runs
+    10:00–15:00), which r5py would otherwise route around silently with walking only."""
+    trip_ids = set(feed["trips.txt"]["trip_id"])
+    running: set[str] = set()
+    freq = feed.get("frequencies.txt")
+    freq_trips: set[str] = set()
+    if freq is not None and not freq.empty:
+        fs = freq["start_time"].map(to_seconds)
+        fe = freq["end_time"].map(to_seconds)
+        freq_trips = set(freq["trip_id"])
+        running |= set(freq.loc[(fs < end_s) & (fe > start_s), "trip_id"])
+    st = feed["stop_times.txt"]
+    st = st[~st["trip_id"].isin(freq_trips)]
+    if len(st):
+        t = st["departure_time"].where(st["departure_time"].notna(), st["arrival_time"])
+        span = pd.DataFrame({"trip_id": st["trip_id"].to_numpy(),
+                             "t": t.map(to_seconds).to_numpy()}).groupby("trip_id")["t"]
+        lo, hi = span.min(), span.max()
+        running |= set(lo.index[(lo < end_s) & (hi >= start_s)])
+    return len(running & trip_ids), len(trip_ids)
 
 
 def representative_routes(feed: Feed, departure_s: float, window_s: float,
