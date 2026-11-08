@@ -211,8 +211,18 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   coordinates to ~1 m (1.2 MB); the API now gzips responses (259 kB on the wire).
 - **Spending flows** link a neighbourhood to a street; they are not routes. Drawn as raised 3D
   arcs they looked like flight paths from straight above, and at street zoom flat lines read as
-  roads through blocks. Now: flat lines fading from the neighbourhood to the street; the top-50
+  roads through blocks. Now: flat lines fading from the neighbourhood to the street; the
   overview hides above map zoom 13; clicking a changed street shows only its own flows.
+- **Fewer, thicker flow lines.** The top 50 shifts were mostly a long tail: for an Imbaba →
+  Shubra al-Khayma line, 40 of 50 were under a tenth of the largest, drawn as a fan of
+  hairlines that looked like a bug. The overview now keeps at most `spending.n_flows` (20)
+  and drops any below `spending.flow_min_share` (0.1) × the largest (that line: 10 lines);
+  a clicked street's own flows use the same cutoff. Lines are 2–8 px instead of 1–5 px.
+  Display only; CLAUDE.md §8 asks for the top 50. Merging origins into H3 res-6 districts
+  was tried first and did not help: the 50 lines came from only 7 cells.
+- **Arrowheads on blue flows** point from the residents to the street that gains their
+  spending. Red flows get none: that money leaves the street for other shops, not for the
+  residents' end of the line, so an arrow there would point the wrong way.
 
 ## Data storage
 

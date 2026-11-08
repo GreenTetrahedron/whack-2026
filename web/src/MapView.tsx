@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Layer, PickingInfo } from "@deck.gl/core";
-import { ArcLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { ArcLayer, GeoJsonLayer, IconLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
 import type { Baseline, DraftLine, EvalResult, StationResult, StreetResult } from "./types";
 import { divergingColor, egp, GAIN, hexToRgb, LOSS, num, pct, RISK_COLOR, type RGBA, sequentialColor } from "./format";
@@ -58,6 +58,37 @@ type DrawnStation = {
 type ZoneRow = StationResult & { color: string };
 
 type FlowRow = { from: [number, number]; to: [number, number]; egp: number };
+
+/** Arrowhead pointing east, 20 × 20 units, anchored `gap` units past its tip so it stops short of
+ * the street it points at. Drawn as a mask so the layer colours it. */
+function arrowIcon(gap: number) {
+  const w = 20 + gap;
+  return {
+    id: `arrow-${gap}`,
+    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${2 * w}" height="40" viewBox="0 0 ${w} 20">` +
+        '<path d="M0 0 L20 10 L0 20 L5 10 Z" fill="#000"/></svg>',
+    )}`,
+    width: 2 * w,
+    height: 40,
+    anchorX: 2 * w,
+    anchorY: 20,
+    mask: true,
+  };
+}
+const ARROW = arrowIcon(8); // tip just short of the street dot
+// a clicked street's arrows are all 16 px (1 unit = 0.8 px): 18 units puts the tips just outside its 13 px ring
+const ARROW_RING = arrowIcon(18);
+const ARROW_RING_PX = 16;
+
+/** Direction of a flow line at its street end, degrees counter-clockwise from east, on the
+ * Web Mercator map (where the flat line is straight). */
+function flowAngle(f: FlowRow): number {
+  const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+  const dx = ((f.to[0] - f.from[0]) * Math.PI) / 180;
+  const dy = mercY(f.to[1]) - mercY(f.from[1]);
+  return (Math.atan2(dy, dx) * 180) / Math.PI;
+}
 
 function streetRadius(R0: number): number {
   return 35 + 5 * Math.sqrt(Math.max(R0, 0) / 1e6); // metres
@@ -283,7 +314,7 @@ export default function MapView(props: Props) {
     );
     if (flowRows.length) {
       const maxFlow = Math.max(...flowRows.map((f) => Math.abs(f.egp)), 1);
-      const fromAlpha = selectedStreet ? 70 : 25;
+      const fromAlpha = selectedStreet ? 70 : 50;
       const tint = (d: FlowRow, alpha: number): RGBA => {
         const [r, g, b] = d.egp < 0 ? LOSS : GAIN;
         return [r, g, b, alpha];
@@ -299,10 +330,24 @@ export default function MapView(props: Props) {
           // faint where the residents live, solid at the street the spending moves to or from
           getSourceColor: (d) => tint(d, fromAlpha),
           getTargetColor: (d) => tint(d, 230),
-          getWidth: (d) => 1 + (4 * Math.abs(d.egp)) / maxFlow,
+          getWidth: (d) => 2 + (6 * Math.abs(d.egp)) / maxFlow,
           widthUnits: "pixels",
           pickable: true,
           updateTriggers: { getSourceColor: fromAlpha },
+        }),
+        // arrowheads show which way customers' spending moves: home → the street that gains it.
+        // Red lines get none: that money leaves the street for other shops, not for the home end.
+        new IconLayer<FlowRow>({
+          id: "flow-arrows",
+          data: flowRows.filter((f) => f.egp > 0),
+          getPosition: (d) => d.to,
+          getIcon: () => (selectedStreet ? ARROW_RING : ARROW),
+          getAngle: flowAngle,
+          billboard: false, // lie on the map so the angle follows map north if the map is rotated
+          getSize: (d) => (selectedStreet ? ARROW_RING_PX : 12 + (8 * d.egp) / maxFlow),
+          sizeUnits: "pixels",
+          getColor: (d) => tint(d, 240),
+          updateTriggers: { getIcon: !!selectedStreet, getSize: !!selectedStreet },
         }),
       );
     }

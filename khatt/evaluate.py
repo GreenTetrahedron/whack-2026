@@ -265,7 +265,8 @@ def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells,
     report = (np.abs(dR_pct) > min_pct) | (rt.risk != "green") | (ff.passby_egp > 0)
     F = spending.flow_matrix(world, sp)
     own_flows = spending.street_flows(world, F, np.flatnonzero(report),
-                                      int(params["spending.n_street_flows"]))
+                                      int(params["spending.n_street_flows"]),
+                                      float(params["spending.flow_min_share"]))
     streets = []
     for k in np.flatnonzero(report):
         streets.append({
@@ -369,7 +370,8 @@ def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells,
         "stations": stations,
         "hexes": hexes,
         "footfall_cells": footfall_cells,
-        "flows": spending.top_flows(world, sp, int(params["spending.n_flows"]), F),
+        "flows": spending.top_flows(world, sp, int(params["spending.n_flows"]), F,
+                                   float(params["spending.flow_min_share"])),
         "microbus_routes": microbus_routes,
         "synergy": [],
         "attribution": {},

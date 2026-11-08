@@ -89,6 +89,20 @@ def test_street_flows_are_each_streets_largest(world, params, downtown_line):
         assert all(np.sign(f["egp"]) in (-1, 0, 1) for f in flows)
 
 
+def test_flows_drop_the_tiny_tail(world, params, downtown_line):
+    """Map flows skip shifts below flow_min_share × the largest (overview and per street)."""
+    share = float(params["spending.flow_min_share"])
+    assert share > 0
+    out = evaluate(world, [downtown_line], params)
+    mags = [abs(f["egp"]) for f in out["flows"]]
+    assert mags and min(mags) >= share * max(mags) - 1e-6
+    for s in out["streets"]:
+        own = [abs(f["egp"]) for f in s["flows"]]
+        assert not own or min(own) >= share * max(own) - 1
+    loose = evaluate(world, [downtown_line], params.with_overrides({"spending": {"flow_min_share": 0}}))
+    assert len(loose["flows"]) >= len(out["flows"])
+
+
 def test_evaluate_returns_street_flows(world, params, downtown_line):
     out = evaluate(world, [downtown_line], params)
     k = int(params["spending.n_street_flows"])
