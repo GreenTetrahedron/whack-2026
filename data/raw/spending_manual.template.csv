@@ -1,0 +1,20 @@
+governorate,coicop,value_egp,period,basis,household_size,prices,source
+# Optional override of config/spending_hiecs_2019_20.csv (CAPMAS HIECS 2019/20, used by default).
+# coicop: 01 food, 03 clothing, 05 furnishings, 09 recreation, 11 restaurants & hotels
+# period: annual | monthly ; basis: household | person ; household_size needed when basis=household
+# prices: 2021, or the survey year (converted with spending.price_factor_to_2021)
+Cairo,01,,annual,household,,2021,
+Cairo,03,,annual,household,,2021,
+Cairo,05,,annual,household,,2021,
+Cairo,09,,annual,household,,2021,
+Cairo,11,,annual,household,,2021,
+Giza,01,,annual,household,,2021,
+Giza,03,,annual,household,,2021,
+Giza,05,,annual,household,,2021,
+Giza,09,,annual,household,,2021,
+Giza,11,,annual,household,,2021,
+Qalyubia,01,,annual,household,,2021,
+Qalyubia,03,,annual,household,,2021,
+Qalyubia,05,,annual,household,,2021,
+Qalyubia,09,,annual,household,,2021,
+Qalyubia,11,,annual,household,,2021,
