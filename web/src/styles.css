@@ -430,6 +430,7 @@ td.name {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  z-index: 5;
 }
 /* icon slot of fixed width so every label starts at the same place */
 .legend > div {
