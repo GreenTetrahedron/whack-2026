@@ -18,7 +18,7 @@ Read this whole file before writing code. When something here conflicts with you
 7. **Coordinates:** store WGS84 (EPSG:4326). Do all metric work (buffers, distances, DBSCAN) in **EPSG:32636 (UTM 36N)**. Axis order: GeoJSON / deck.gl = `[lng, lat]`; `h3` functions take `(lat, lng)`. Name variables `lat`, `lng` explicitly — never `x`, `y` for geographic coordinates.
 8. **Unreachable travel time = 999.0**, never NaN or inf (NaN breaks `min`).
 9. **Licences:** Transport for Cairo (TfC) data is CC BY-NC 4.0 — show "Transit data: Transport for Cairo (CC BY-NC 4.0)" in the web footer. WorldPop CC BY 4.0. Overture Places CDLA-Permissive-2.0. OSM ODbL.
-10. Raw data is never committed. `data/raw/` and `data/interim/` are git-ignored.
+10. Raw data is stored in Git LFS (`data/raw/`, private repo; see `.gitattributes`). The full `egypt-latest.osm.pbf` is not committed (re-download with `pipeline/00_download.py --only osm_pbf`). `data/interim/` is git-ignored.
 
 ---
 
