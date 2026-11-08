@@ -34,7 +34,7 @@ export default function Results(props: {
   return (
     <>
       <section>
-        <h2>3 · Results</h2>
+        <h2>Results</h2>
         <div className="row">
           <div className="seg">
             <button className={props.view === "before" ? "on" : ""} onClick={() => props.setView("before")}>
