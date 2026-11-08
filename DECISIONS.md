@@ -38,6 +38,8 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   scenario). `d_spend_reach` (hex output) = spending-weighted relative change of the Huff denominator
   Σ_d A^α e^(−βT). Induced demand scales S by `1 + induced_pct × that gain` (gain floored at 0).
 - **Model 1 flows**: `|Σ_c S[o,c] ΔP[o,d,c]|`, top `spending.n_flows` (50), `[lng, lat]` order.
+  Each reported street also carries its own top `spending.n_street_flows` (8) as `flows`
+  (≈ +180 kB on the 2 × 20-station case, 508 kB in all).
 - **Model 2 usefulness**: share of the catchment's spending-weighted trips *to shopping streets*
   with T1 < T0 − 0.5 (scenario probabilities), weighted by catchment population of each parent cell.
 - **Model 2 pass-by**: walk distance from the station's catchment Dijkstra to each street's nearest
@@ -51,7 +53,8 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   tolerance) and put every street in the payload. On synthetic data the rent index has a long tail (p99 ≈ 60 %)
   in cells with poor baseline access — review against real data before the demo.
 - **Model 4**: consecutive duplicate stop hexes are collapsed before forming pairs (otherwise pairs
-  inside one cell dilute `share_at_risk`). Feeder = any route vertex within 400 m of a new station.
+  inside one cell dilute `share_at_risk`). Feeder = any route stop within 400 m of a new station
+  (`stop_lat`/`stop_lng`; the drawn line is the road trace, see Map display).
   Vendor pitches lost = Σ_competing share_at_risk × `informal.vendors_per_route` (new parameter,
   assumption: 6), labelled an estimate.
 - **Station zones (area of effect, `khatt/models/zones.py`)**: new display model, not in the
@@ -198,6 +201,19 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - **08_baseline_matrix**: r5py (36.5% pairs routed); scipy fallback for 10 unroutable cells and 119138 other pairs <= 120 min _(2026-11-08 04:03)_
 - **08_baseline_matrix**: T0 built with r5py (36.5% pairs routed); scipy fallback for 10 unroutable cells and 119138 other pairs <= 120 min from ['bus.zip', 'metro.zip'] _(2026-11-08 04:03)_
 
+## Map display
+
+- **Microbus routes** were drawn as straight lines between stops (median 790 m apart), so they cut
+  across blocks. Step 10 now uses each route's GTFS road trace (`shapes.txt`, the trip it already
+  picks for the stop pattern) if every stop is within `informal.shape_max_stop_gap_m` (300 m) of
+  it: all 952 routes qualify, median worst stop gap 2 m. Stop lists and `stop_hex_idx` are
+  unchanged, so model results are identical. `/baseline` simplifies traces to ~10 m and rounds
+  coordinates to ~1 m (1.2 MB); the API now gzips responses (259 kB on the wire).
+- **Spending flows** link a neighbourhood to a street; they are not routes. Drawn as raised 3D
+  arcs they looked like flight paths from straight above, and at street zoom flat lines read as
+  roads through blocks. Now: flat lines fading from the neighbourhood to the street; the top-50
+  overview hides above map zoom 13; clicking a changed street shows only its own flows.
+
 ## Data storage
 
 - `data/raw/` is committed through Git LFS (about 360 MB) so teammates don't have to re-run the downloads,
@@ -208,3 +224,4 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   .gitignore still excludes: `T0*.npy`/`T0*.json` (55 MB each) and `walk_*` (28 MB). The API
   needs `T0.npy` and the walk graph, so a fresh clone still has to run 06 and 08 for real data.
 - **07_gtfs_clean**: n_places: 99,375 of 100,263 mapped places fall in kept cells (jobs stand-in for the station zones model) _(2026-11-08 05:21)_
+- **10_microbus_routes**: route lines follow the GTFS road trace (shapes.txt) for 952 of 952 routes; 0 traces had a stop > 300 m away and 0 had none, so those use straight stop-to-stop lines. The model uses the stops either way (stop_lat/stop_lng, stop_hex_idx) _(2026-11-08 06:23)_

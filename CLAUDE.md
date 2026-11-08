@@ -151,7 +151,7 @@ Projected (EPSG:32636) OSMnx graph, largest strongly connected component, edge a
 `stop_id, line, name, lat, lng, h3_r8, hex_idx, catchment_pop10` (residents within a 10-min walk, each hex assigned to its nearest station only once).
 
 ### `microbus_routes.parquet`
-`route_id, agency, headway_min, stop_hex_idx (list[int32]), geometry (LineString)`.
+`route_id, agency, headway_min, stop_hex_idx (list[int32]), stop_lat, stop_lng (list[float64], ordered stops), geometry (LineString)`. `geometry` is the GTFS road trace (`shapes.txt`) for drawing; the model uses the stops.
 
 ### `r9_near.parquet` (built lazily is fine)
 Resolution-9 cells with `pop`, `parent_r8_idx`, used for station catchments and fine-grained footfall/rent output.
@@ -369,7 +369,8 @@ The frontend owns line state; the API is stateless. `/evaluate` response shape:
   "streets": [{"street_id": 12, "name": "...", "dR_egp": -3.4e6, "dR_pct": -4.1,
                "by_category": {"daily": -0.2, "comp": -5.9, "eat": -2.0},
                "passby_egp": 0, "rent_pct": 1.8, "revenue_pct": -4.1,
-               "risk": "red", "local_loser": true, "unbranded_at_risk": 9}],
+               "risk": "red", "local_loser": true, "unbranded_at_risk": 9,
+               "flows": [{"from": [31.21, 30.01], "egp": -4.0e5}]}],
   "stations": [{"line_id": "A", "idx": 0, "lat": 30.0, "lng": 31.2, "riders_daily": 42000, "vendor_pitches": 84,
                 "zone_radius_m": 1100, "zone_users": 11000, "zone_pop": 40000, "zone_mean_p": 0.21}],
   "hexes": [{"h3": "8834...", "d_spend_reach": 0.03, "rent_pct": 2.1}],

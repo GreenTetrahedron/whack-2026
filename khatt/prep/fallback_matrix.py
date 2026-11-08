@@ -35,6 +35,7 @@ class Route:
     speed_kmh: float = 20.0
     bidirectional: bool = False
     stop_ids: list[str] = field(default_factory=list)
+    shape_id: str | None = None  # GTFS shapes.txt trace of the representative trip, if any
 
     def segment_minutes(self) -> np.ndarray:
         if self.ride_min is not None:

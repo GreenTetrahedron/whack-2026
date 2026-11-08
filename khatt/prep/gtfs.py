@@ -307,6 +307,10 @@ def representative_routes(feed: Feed, departure_s: float, window_s: float,
             continue
         same = g[g["pattern"] == pattern]["trip_id"]
         trip = st[st["trip_id"] == same.iloc[0]]
+        shape_id = None
+        if "shape_id" in g.columns:
+            sid = g.loc[g["trip_id"] == same.iloc[0], "shape_id"].iloc[0]
+            shape_id = str(sid) if isinstance(sid, str) and sid else None
         arr = trip["arrival_time"].map(to_seconds).to_numpy()
         dep = trip["departure_time"].map(to_seconds).to_numpy()
         dep = np.where(np.isnan(dep), arr, dep)
@@ -327,6 +331,6 @@ def representative_routes(feed: Feed, departure_s: float, window_s: float,
             stop_lat=[float(stops.at[s, "stop_lat"]) for s in pattern],
             stop_lng=[float(stops.at[s, "stop_lon"]) for s in pattern],
             ride_min=ride, speed_kmh=35.0 if mode == "metro" else 15.0,
-            stop_ids=list(pattern),
+            stop_ids=list(pattern), shape_id=shape_id,
         ))
     return out

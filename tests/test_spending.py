@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from khatt.engine.lines import LineSpec
 from khatt.evaluate import build_scenario, evaluate
@@ -67,3 +68,31 @@ def test_closer_streets_gain(world, params, downtown_line):
     assert out["flows"] and len(out["flows"]) <= params["spending.n_flows"]
     f = out["flows"][0]
     assert len(f["from"]) == 2 and 31 < f["from"][0] < 32, "flows are [lng, lat]"
+
+
+def test_street_flows_are_each_streets_largest(world, params, downtown_line):
+    from khatt.evaluate import build_scenario, destinations
+    from khatt.models.spending import flow_matrix, street_flows
+
+    sc = build_scenario(world, [downtown_line], params)
+    dest, _ = destinations(world, sc, params)
+    T0_d, T1_d = sc.overlay.to(dest)
+    cols = np.searchsorted(dest, world.street_hex)
+    F = flow_matrix(world, run(world, params, T0_d[:, cols], T1_d[:, cols]))
+    rows = np.flatnonzero(np.abs(F).max(axis=0) > 0)[:10]
+    got = street_flows(world, F, rows, 5)
+    for row in rows:
+        flows = got[int(row)]
+        mags = [abs(f["egp"]) for f in flows]
+        assert 0 < len(flows) <= 5 and mags == sorted(mags, reverse=True)
+        assert mags[0] == pytest.approx(np.abs(F[:, row]).max(), abs=1)
+        assert all(np.sign(f["egp"]) in (-1, 0, 1) for f in flows)
+
+
+def test_evaluate_returns_street_flows(world, params, downtown_line):
+    out = evaluate(world, [downtown_line], params)
+    k = int(params["spending.n_street_flows"])
+    with_flows = [s for s in out["streets"] if s["flows"]]
+    assert with_flows and all(len(s["flows"]) <= k for s in out["streets"])
+    f = with_flows[0]["flows"][0]
+    assert len(f["from"]) == 2 and isinstance(f["egp"], int)

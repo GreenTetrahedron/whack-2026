@@ -20,19 +20,30 @@ class InformalResult:
 
 
 def route_vertex_tree(world):
-    """KD-tree over all microbus route vertices (UTM), cached on the world."""
+    """KD-tree over all microbus stops (UTM), cached on the world. Routes without stop columns
+    (older processed data) fall back to their line vertices, which were the stops."""
     cached = getattr(world, "_route_tree", None)
     if cached is not None:
         return cached
+    mb = world.microbus
+    has_stops = "stop_lat" in mb.columns and "stop_lng" in mb.columns
     xs, ys, rows = [], [], []
-    for r, geom in enumerate(world.microbus.geometry):
-        if geom is None or geom.is_empty:
+    for r in range(len(mb)):
+        if has_stops:
+            lat = np.asarray(mb["stop_lat"].iat[r], float)
+            lng = np.asarray(mb["stop_lng"].iat[r], float)
+        else:
+            geom = mb.geometry.iat[r]
+            if geom is None or geom.is_empty:
+                continue
+            coords = np.asarray(geom.coords)
+            lat, lng = coords[:, 1], coords[:, 0]
+        if len(lat) == 0:
             continue
-        coords = np.asarray(geom.coords)
-        x, y = to_utm(coords[:, 1], coords[:, 0])
+        x, y = to_utm(lat, lng)
         xs.append(np.atleast_1d(x))
         ys.append(np.atleast_1d(y))
-        rows.append(np.full(len(coords), r))
+        rows.append(np.full(len(lat), r))
     if xs:
         tree = cKDTree(np.column_stack([np.concatenate(xs), np.concatenate(ys)]))
         out = (tree, np.concatenate(rows))

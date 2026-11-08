@@ -51,6 +51,7 @@ spending:
   rwi_scale: {low: 0.3, central: 0.5, high: 0.8, source: "assumption: wealth factor = exp(scale × Meta RWI)"}
   local_radius_m: 1500
   n_flows: 50                      # top origin→street shifts returned for the ArcLayer
+  n_street_flows: 8                # per reported street: its own top shifts, shown when clicked
 
 streets:
   eps_m: {low: 100, central: 150, high: 250, source: assumption}
@@ -109,6 +110,7 @@ informal:
   feeder_radius_m: 400
   vendors_per_1000_exits: {low: 1, central: 2, high: 4, source: assumption}
   vendors_per_route: {low: 2, central: 6, high: 12, source: "assumption; pitches at a route's busiest stops"}
+  shape_max_stop_gap_m: 300        # draw a route along its GTFS road trace only if every stop is this close to it
 
 output:
   min_abs_dR_pct: 0.1              # only streets with |dR_pct| above this (or risk != green) are returned
