@@ -116,8 +116,17 @@ def main() -> None:
     r9 = r9[["h3", "pop", "parent_r8_idx"]].reset_index(drop=True)
     r9["pop"] = r9["pop"].astype("float32")
 
+    # all mapped places (any category, incl. "other"): stand-in for jobs in the zones model
+    places = pd.read_parquet(require(INTERIM / "shops.parquet", "run pipeline/04_shops.py"),
+                             columns=["lat", "lng"])
+    place_cells = pd.Series(cells_for_points(places["lat"], places["lng"], 8)).value_counts()
+    hexes["n_places"] = hexes["h3"].map(place_cells).fillna(0).astype("int32")
+    kept = int(hexes["n_places"].sum())
+    decision("07_gtfs_clean", f"n_places: {kept:,} of {len(places):,} mapped places fall in kept "
+             "cells (jobs stand-in for the station zones model)")
+
     cols = ["h3", "idx", "lat", "lng", "governorate", "pop", "wealth", "spend_daily",
-            "spend_comp", "spend_eat"]
+            "spend_comp", "spend_eat", "n_places"]
     (PROCESSED / "hex_index.json").write_text(json.dumps(hex_ids))
     hexes[cols].to_parquet(PROCESSED / "hexes_r8.parquet", index=False)
     streets.to_parquet(PROCESSED / "streets.parquet", index=False)

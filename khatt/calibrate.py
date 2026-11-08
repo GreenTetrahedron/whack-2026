@@ -1,7 +1,8 @@
 """Fit beta per category with Hyman's method (CLAUDE.md §13).
 
 Bisection on beta_c until the spending-weighted mean baseline shopping trip time equals
-spending.target_mean_trip_min[c]. Writes data/processed/calibrated.json.
+spending.target_mean_trip_min[c]; likewise zones.beta_work for work trips to mapped places
+(target zones.target_mean_work_trip_min). Writes data/processed/calibrated.json.
 
     python -m khatt.calibrate [processed_dir]
 """
@@ -39,6 +40,49 @@ def mean_trip_time(world, params: Params, c: int, beta: float, T: np.ndarray) ->
     return float((trips * T).sum() / total) if total > 0 else float("nan")
 
 
+def bisect_beta(mean_time, target: float, lo: float, hi: float, f_lo: float):
+    """Geometric bisection on a decreasing mean_time(beta) → (beta, achieved mean)."""
+    if target >= f_lo:
+        return float(lo), float(f_lo)
+    mid, f_mid = lo, f_lo
+    for _ in range(MAX_ITER):
+        mid = np.sqrt(lo * hi)  # beta spans orders of magnitude
+        f_mid = mean_time(mid)
+        if abs(f_mid - target) < TOLERANCE_MIN:
+            break
+        if f_mid > target:
+            lo = mid
+        else:
+            hi = mid
+    return float(mid), float(f_mid)
+
+
+def mean_work_trip_time(world, params: Params, beta: float) -> float:
+    """Population-weighted mean baseline trip time of a gravity model to mapped places."""
+    T = world.T0
+    ok = T <= float(params["spending.max_trip_min"])
+    w = np.where(ok, world.places[None, :] * np.exp(-beta * T.astype(np.float64)), 0.0)
+    tot = w.sum(axis=1)
+    has = tot > 0
+    mean_o = (w[has] * T[has]).sum(axis=1) / tot[has]
+    pop = world.pop[has]
+    return float((pop * mean_o).sum() / pop.sum()) if pop.sum() > 0 else float("nan")
+
+
+def fit_beta_work(world, params: Params) -> dict:
+    """Hyman's method for zones.beta_work (work trips to mapped places, the jobs stand-in)."""
+    target = float(params["zones.target_mean_work_trip_min"])
+    if world.places.sum() <= 0:
+        return {"beta_work": None, "notes": ["no n_places in hexes_r8: beta_work not fitted"]}
+    lo, hi = BETA_RANGE
+    f_lo = mean_work_trip_time(world, params, lo)
+    beta, achieved = bisect_beta(lambda b: mean_work_trip_time(world, params, b), target,
+                                 lo, hi, f_lo)
+    notes = [] if target < f_lo else [f"work: target {target} ≥ max achievable {f_lo:.1f}"]
+    return {"beta_work": beta, "work_achieved_mean_min": round(achieved, 3),
+            "work_target_mean_min": target, "notes": notes}
+
+
 def fit_beta(world, params: Params) -> dict:
     """Bisection per category. If the target is below what any beta can reach (the time to the
     nearest street cluster, ``floor``), aim for floor × (1 + calibration_floor_margin) instead of
@@ -60,19 +104,9 @@ def fit_beta(world, params: Params) -> dict:
             target = new_target
         out["effective_target_min"][cat] = target
         if target >= f_lo:
-            beta, achieved = lo, f_lo
             out["notes"].append(f"{cat}: target {target} ≥ max achievable {f_lo:.1f}; beta at floor")
-        else:
-            for _ in range(MAX_ITER):
-                mid = np.sqrt(lo * hi)  # geometric bisection: beta spans orders of magnitude
-                f_mid = mean_trip_time(world, params, c, mid, T)
-                if abs(f_mid - target) < TOLERANCE_MIN:
-                    break
-                if f_mid > target:
-                    lo = mid
-                else:
-                    hi = mid
-            beta, achieved = float(mid), float(f_mid)
+        beta, achieved = bisect_beta(lambda b, c=c: mean_trip_time(world, params, c, b, T), target,
+                                     lo, hi, f_lo)
         out["beta"][cat] = float(beta)
         out["achieved_mean_min"][cat] = round(float(achieved), 3)
     return out
@@ -87,6 +121,9 @@ def main() -> None:
     params = Params.load(calibrated=False)
     world = load_world(path)
     result = fit_beta(world, params)
+    work = fit_beta_work(world, params)
+    result["notes"] += work.pop("notes")
+    result.update(work)
     result["fitted_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     (path / "calibrated.json").write_text(json.dumps(result, indent=2))
     print(f"calibrated.json written to {path} in {time.perf_counter() - t:.1f} s")
@@ -94,6 +131,9 @@ def main() -> None:
         print(f"  {cat:5s} beta={result['beta'][cat]:.4f}  mean trip "
               f"{result['achieved_mean_min'][cat]:.1f} min (target "
               f"{result['effective_target_min'][cat]}, spec {result['target_mean_min'][cat]})")
+    if result.get("beta_work") is not None:
+        print(f"  work  beta={result['beta_work']:.4f}  mean trip "
+              f"{result['work_achieved_mean_min']:.1f} min (target {result['work_target_mean_min']})")
     for note in result["notes"]:
         print("  NOTE:", note)
 

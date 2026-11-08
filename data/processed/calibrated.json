@@ -23,5 +23,8 @@
     "daily: target 10.0 min is below the nearest-cluster floor 21.1 min; calibrated to 23.16 (floor + 10%)",
     "eat: target 20.0 min is below the nearest-cluster floor 20.6 min; calibrated to 22.68 (floor + 10%)"
   ],
-  "fitted_at": "2026-11-08 04:04:31"
+  "beta_work": 0.08005833900156054,
+  "work_achieved_mean_min": 40.008,
+  "work_target_mean_min": 40.0,
+  "fitted_at": "2026-11-08 05:28:43"
 }

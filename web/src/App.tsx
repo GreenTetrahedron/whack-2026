@@ -70,6 +70,7 @@ export default function App() {
     footfall: false,
     microbus: true,
     allMicrobus: false,
+    zones: true,
   });
 
   // ---- load what the backend has precomputed ----
@@ -373,6 +374,8 @@ const SLIDER_LABELS: Record<string, string> = {
   "spending.beta.eat": "β eating out",
   "rents.elasticity": "Rent elasticity to access",
   "spending.induced_pct": "Induced spending",
+  "zones.threshold": "Area of effect: mean chance inside",
+  "zones.work_trip_share": "Area of effect: share of work trips",
 };
 
 function Assumptions(props: {
@@ -428,6 +431,9 @@ function Legend({ hasResult }: { hasResult: boolean }) {
           </div>
           <div>
             <span className="dot ring" /> red ring = margin squeeze risk
+          </div>
+          <div>
+            <span className="dot zone" /> station area of effect
           </div>
           <div>
             <span className="bar" style={{ background: "rgb(240,120,0)" }} /> microbus competing

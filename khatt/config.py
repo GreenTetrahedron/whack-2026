@@ -181,7 +181,7 @@ class Params:
 
 
 def apply_calibration(tree: dict, calibrated: dict) -> dict:
-    """Replace spending.beta with fitted values; low/high = ±50 % (CLAUDE.md §13)."""
+    """Replace spending.beta and zones.beta_work with fitted values; low/high = ±50 % (§13)."""
     tree = copy.deepcopy(tree)
     for cat, value in (calibrated.get("beta") or {}).items():
         value = float(value)
@@ -189,6 +189,13 @@ def apply_calibration(tree: dict, calibrated: dict) -> dict:
             "low": 0.5 * value,
             "central": value,
             "high": 1.5 * value,
+            "source": "calibrated (Hyman's method), ±50 %",
+        }
+    work = calibrated.get("beta_work")
+    if work is not None and "zones" in tree:
+        value = float(work)
+        tree["zones"]["beta_work"] = {
+            "low": 0.5 * value, "central": value, "high": 1.5 * value,
             "source": "calibrated (Hyman's method), ±50 %",
         }
     return tree

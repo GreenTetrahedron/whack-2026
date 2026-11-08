@@ -125,6 +125,7 @@ Ordered list of H3 resolution-8 cell IDs (strings). Row/column `k` of every matr
 | `spend_daily` | float32 | EGP/yr, 2021 prices, daily needs (COICOP 01) |
 | `spend_comp` | float32 | EGP/yr, comparison goods (COICOP 03, 05, electronics part of 09) |
 | `spend_eat` | float32 | EGP/yr, eating out (COICOP 11) |
+| `n_places` | int32 | mapped places of any category (incl. `other`) in the cell; jobs stand-in for station zones |
 
 ### `streets.parquet` (+ `streets.geojson` for the web)
 | column | dtype | meaning |
@@ -316,6 +317,9 @@ R[d, c]     = sum_o S[o, c] * P[o, d]
 4. Do not add pass-by spend into model 1's `R`; report it separately and sum only in `total_revenue_change`.
 5. Output: per station `{riders_daily, catchment_pop10}`, per street `passby_egp`, plus res-9 footfall cells for a heatmap.
 
+### Model 2b — station zones / area of effect (`zones.py`)
+For each res-9 cell near a new station, `P_use[c, s]` = chance a typical trip from `c` boards the line at `s`: work trips (gravity to `n_places`, `zones.beta_work` calibrated by Hyman's method to `zones.target_mean_work_trip_min`) blended with model 1's shopping trips by `zones.work_trip_share`; a trip switches by a ramp from 0 at `zones.min_saving_min` saved to 1 at `zones.full_saving_min`; paths must ride at least one stop; walk access to stations (≤ `zones.walk_max_min`) is given to today's trip too. Circle radius = largest radius whose population-weighted mean `P_use` ≥ `zones.threshold` while the outer `zones.edge_band_m` still averages ≥ `zones.edge_share` × threshold. Display only: riders (model 2) are unchanged.
+
 ### Model 3 — rents and displacement (`rents.py`)
 1. **Market potential** of destination cell `h`: `M[h] = sum_c sum_o S[o, c] × exp(-beta_c × T[o, h])`, for baseline and scenario, only for cells within `rents.radius_m` of new stations.
 2. `rent_pct[h] = elasticity × (M1 - M0) / M0` (plus `footfall_term × passby_share`).
@@ -360,12 +364,14 @@ The frontend owns line state; the API is stateless. `/evaluate` response shape:
   "warnings": ["Station 3 of 'Line A' is 340 m from the walking network"],
   "totals": {"dR_egp": 0.0, "passby_egp": 1.2e8, "riders_daily": 310000,
              "streets_gaining": 41, "streets_losing": 37, "red_streets": 6,
-             "unbranded_at_risk": 212, "microbus": {"competing": 14, "feeder": 22, "unaffected": 894}},
+             "unbranded_at_risk": 212, "microbus": {"competing": 14, "feeder": 22, "unaffected": 894},
+             "zone_users": 61000, "zone_threshold": 0.2},
   "streets": [{"street_id": 12, "name": "...", "dR_egp": -3.4e6, "dR_pct": -4.1,
                "by_category": {"daily": -0.2, "comp": -5.9, "eat": -2.0},
                "passby_egp": 0, "rent_pct": 1.8, "revenue_pct": -4.1,
                "risk": "red", "local_loser": true, "unbranded_at_risk": 9}],
-  "stations": [{"line_id": "A", "idx": 0, "lat": 30.0, "lng": 31.2, "riders_daily": 42000, "vendor_pitches": 84}],
+  "stations": [{"line_id": "A", "idx": 0, "lat": 30.0, "lng": 31.2, "riders_daily": 42000, "vendor_pitches": 84,
+                "zone_radius_m": 1100, "zone_users": 11000, "zone_pop": 40000, "zone_mean_p": 0.21}],
   "hexes": [{"h3": "8834...", "d_spend_reach": 0.03, "rent_pct": 2.1}],
   "flows": [{"from": [31.21, 30.01], "to": [31.24, 30.05], "egp": 2.1e6}],
   "microbus_routes": [{"route_id": "bus:123", "status": "competing", "share_at_risk": 0.46}],

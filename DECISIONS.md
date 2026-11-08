@@ -54,6 +54,25 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   inside one cell dilute `share_at_risk`). Feeder = any route vertex within 400 m of a new station.
   Vendor pitches lost = Σ_competing share_at_risk × `informal.vendors_per_route` (new parameter,
   assumption: 6), labelled an estimate.
+- **Station zones (area of effect, `khatt/models/zones.py`)**: new display model, not in the
+  original spec; riders (model 2) are unchanged and stay calibrated to 4.5 M/day.
+  - *Trips*: half work trips, half shopping trips (`zones.work_trip_share`, assumption). The idea is that
+    commuters also shop where they work. Work destinations are weighted by `n_places` (all 99k mapped places
+    in kept cells, any category): a jobs stand-in because there is no employment data.
+    `zones.beta_work` is fitted by Hyman's method to a 40-min mean work trip (assumption) → 0.080/min.
+  - *Switching*: a linear ramp (0 below 2 min saved, 1 at 10 min) instead of a logit. A logit gives
+    ~30 % to trips the line does not speed up at all, which inflated every zone.
+  - *Fair comparison*: res-9 cells near a station get walk-graph access to it, so today's trip may use
+    the same walk to the station's area; and a path must ride at least one stop. Without both, a line
+    crawling at 1 km/h still got thousands of users from walk precision alone.
+  - *Circle*: largest radius where the population-weighted mean chance ≥ `zones.threshold` and the
+    outer 500 m band still averages ≥ half of it (`zones.edge_share`). Without the edge rule, a
+    terminal whose town 2–3 km out has a 50 % chance stretched to the 5 km cap over rings at 1 %.
+  - *Threshold 0.2, not 0.3*: on real data the chance near a station is 0.1–0.65 (most trips are local
+    and would not use any metro). On two 6-station test lines, 0.3 left 8 of 12 stations without a
+    circle; 0.2 gives circles of 250 m–1.1 km at 7 of 12. Stations at existing metro (Giza Square,
+    Ramses) get small or no circles. Slider range 0.1–0.3.
+  - *Cost*: 4–18 ms per request (parent res-8 rows plus res-9 rows only inside a 20-min walk).
 - **Synergy and Shapley** both need per-subset runs, so both are computed only when the request sets
   `attribution: true` (4 lines → 14 extra spending-only runs, ≈ 0.35 s on a 3,000-cell world).
 
@@ -188,3 +207,4 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - `data/processed/` is committed too (its parquet files through LFS), except the files
   .gitignore still excludes: `T0*.npy`/`T0*.json` (55 MB each) and `walk_*` (28 MB). The API
   needs `T0.npy` and the walk graph, so a fresh clone still has to run 06 and 08 for real data.
+- **07_gtfs_clean**: n_places: 99,375 of 100,263 mapped places fall in kept cells (jobs stand-in for the station zones model) _(2026-11-08 05:21)_

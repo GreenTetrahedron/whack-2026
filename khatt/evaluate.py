@@ -15,7 +15,7 @@ from khatt.engine.lines import LineSpec, Station, line_length_m, validate_lines
 from khatt.engine.multiline import joint_rstar, stations_of, wait_board
 from khatt.engine.overlay import Overlay
 from khatt.geo import to_utm
-from khatt.models import footfall, informal, rents, spending
+from khatt.models import footfall, informal, rents, spending, zones
 
 OUTSIDE_AREA_M = 1000.0  # station further than this from any modelled cell centre → warning
 
@@ -97,24 +97,18 @@ def scenario_overlay(world, lines: list[LineSpec], station_hex: np.ndarray, acce
     return Overlay(world.T0, station_hex, wait_board(lines, params) + access, rstar)
 
 
-def _r9_xy(world):
-    cached = getattr(world, "_r9_xy", None)
-    if cached is None:
-        lat_lng = np.array([h3.cell_to_latlng(c) for c in world.r9["h3"]]).reshape(-1, 2)
-        cached = to_utm(lat_lng[:, 0], lat_lng[:, 1])
-        world._r9_xy = cached
-    return cached
-
-
-def station_catchments(world, sc: Scenario, params: Params) -> list[Catchment]:
+def station_catchments(world, sc: Scenario, params: Params,
+                       cutoff: float | None = None) -> list[Catchment]:
+    """Walking catchment of each station. Default cutoff covers footfall + pass-by."""
     m_per_min = params.walk_m_per_min
-    cutoff = max(float(params["footfall.catchment_min"]),
-                 float(params["footfall.passby_radius_m"]) / m_per_min)
+    if cutoff is None:
+        cutoff = max(float(params["footfall.catchment_min"]),
+                     float(params["footfall.passby_radius_m"]) / m_per_min)
     if world.walk is not None and world.walk.n:
         nodes = np.array([s.node for s in sc.stations], np.int64)
         return catchments(world.walk, nodes, cutoff)
     # no walk graph: straight-line distance × circuity over r9 cells
-    rx, ry = _r9_xy(world)
+    rx, ry = world.r9_xy()
     circuity = float(params["walk.circuity"])
     out = []
     for s in range(len(sc.stations)):
@@ -217,7 +211,11 @@ def evaluate(world, specs: list[LineSpec], params: Params, attribution: bool = F
     inf = informal.run(world, params, sc.overlay, sc.station_x, sc.station_y, ff.riders_daily)
     tick("informal")
 
-    result = assemble(world, params, sc, sp, ff, rt, inf, rent_cells)
+    walk_zone = station_catchments(world, sc, params, float(params["zones.walk_max_min"]))
+    zn = zones.run(world, params, sc, walk_zone)
+    tick("zones")
+
+    result = assemble(world, params, sc, sp, ff, rt, inf, rent_cells, zn)
     report_rows = np.array([s["_row"] for s in result["streets"]], np.int64)
     for s in result["streets"]:
         del s["_row"]
@@ -243,7 +241,10 @@ def _pct(num, den):
                      where=np.asarray(den) > 0) * 100.0
 
 
-def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells) -> dict:
+def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells,
+             zn=None) -> dict:
+    if zn is None:
+        zn = zones.empty(len(sc.stations))
     st = world.streets
     R0 = sp.base.R
     dR = sp.dR
@@ -294,6 +295,10 @@ def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells) -
             "catchment_pop10": round(float(ff.catchment_pop10[k])),
             "usefulness": round(float(ff.usefulness[k]), 3),
             "vendor_pitches": round(float(inf.vendor_pitches[k]), 1),
+            "zone_radius_m": round(float(zn.radius_m[k])),
+            "zone_users": round(float(zn.users[k])),
+            "zone_pop": round(float(zn.pop_in[k])),
+            "zone_mean_p": round(float(zn.mean_p[k]), 3),
             "snap_m": None if not np.isfinite(s.snap_m) else round(s.snap_m, 1),
         })
 
@@ -342,6 +347,8 @@ def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells) -
         "vendor_pitches": float(inf.vendor_pitches.sum()),
         "vendor_pitches_lost": inf.vendor_pitches_lost,
         "microbus": status_counts,
+        "zone_users": float(zn.users.sum()),
+        "zone_threshold": float(params["zones.threshold"]),
     }
 
     lines_out = [{
