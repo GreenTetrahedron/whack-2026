@@ -33,8 +33,10 @@ def market_potential(S: np.ndarray, T: np.ndarray, beta: np.ndarray) -> np.ndarr
     return M
 
 
-def classify(profit: np.ndarray, red_threshold: float) -> np.ndarray:
-    level = np.where(profit >= 0, 0, np.where(profit >= -red_threshold, 1, 2))
+def classify(profit: np.ndarray, red_threshold: float, amber_threshold: float = 0.0) -> np.ndarray:
+    """green if profit ≥ −amber_threshold, amber if ≥ −red_threshold, else red. The amber
+    tolerance stops far-away streets whose share moved by float noise from showing as amber."""
+    level = np.where(profit >= -amber_threshold, 0, np.where(profit >= -red_threshold, 1, 2))
     return RISK_LEVELS[level]
 
 
@@ -68,13 +70,14 @@ def run(world, params: Params, cells: np.ndarray, T0_cells: np.ndarray, T1_cells
     gm = float(params["rents.gross_margin"])
     rcs = float(params["rents.rent_cost_share"])
     red = float(params["rents.red_threshold"])
+    amber = float(params["rents.amber_threshold"])
     profit = gm * revenue - rcs * street_rent
     profit_opening = gm * revenue - rcs * street_rent * short
-    risk = classify(profit, red)
+    risk = classify(profit, red, amber)
     n_unbranded = world.streets["n_unbranded"].to_numpy()
     return RentResult(
         cells=cells, rent_cells=rent_cells, street_rent=street_rent,
         street_rent_opening=street_rent * short, revenue=revenue, profit=profit, risk=risk,
-        risk_opening=classify(profit_opening, red),
+        risk_opening=classify(profit_opening, red, amber),
         unbranded_at_risk=np.where(risk == "red", n_unbranded, 0),
     )

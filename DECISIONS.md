@@ -45,8 +45,10 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   e^(−walk_m / passby_decay_m) over each station's reached r9 cells.
 - **Model 3**: added `rents.footfall_term` (assumption, central 0.1) for the spec's
   `footfall_term × passby_share`. Street rent uses its own pass-by share; hex rent uses Σ pass-by /
-  Σ R0 of its streets. Risk follows the spec literally, so a street losing even 0.05 % with no rent
-  change is *amber* (profit signal < 0). On synthetic data the rent index has a long tail (p99 ≈ 60 %)
+  Σ R0 of its streets. Risk: *green* if profit signal ≥ −`rents.amber_threshold` (new parameter,
+  0.0005, assumption) rather than the spec's ≥ 0. Huff is global, so every street loses a sliver of
+  share to any new line; on real data that float noise made 756 of 912 streets amber (76 with the
+  tolerance) and put every street in the payload. On synthetic data the rent index has a long tail (p99 ≈ 60 %)
   in cells with poor baseline access — review against real data before the demo.
 - **Model 4**: consecutive duplicate stop hexes are collapsed before forming pairs (otherwise pairs
   inside one cell dilute `share_at_risk`). Feeder = any route vertex within 400 m of a new station.

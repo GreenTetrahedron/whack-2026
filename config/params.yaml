@@ -83,6 +83,7 @@ rents:
   rent_cost_share: {low: 0.1, central: 0.2, high: 0.3, source: assumption}
   gross_margin: {low: 0.15, central: 0.25, high: 0.35, source: assumption}
   red_threshold: 0.02
+  amber_threshold: 0.0005   # profit dips smaller than this (0.05 % of revenue) are noise → green; assumption
   short_run_share: 0.3
 
 informal:
