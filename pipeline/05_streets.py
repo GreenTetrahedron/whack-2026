@@ -55,7 +55,10 @@ def main() -> None:
     shops = pd.read_parquet(require(INTERIM / "shops.parquet", "run pipeline/04_shops.py"))
     shops = shops.reset_index(drop=True)
     labels = cluster(shops["x"].to_numpy(), shops["y"].to_numpy(),
-                     float(params["streets.eps_m"]), int(params["streets.min_shops"]))
+                     float(params["streets.eps_m"]), int(params["streets.min_shops"]),
+                     max_extent_m=float(params["streets.max_extent_m"]),
+                     shrink=float(params["streets.eps_shrink"]),
+                     floor_m=float(params["streets.eps_floor_m"]))
     if BUILDINGS.exists():
         area, shop_bld = building_areas(shops, float(params["streets.footprint_join_m"]))
     else:

@@ -7,6 +7,7 @@ area:
   bbox: [30.85, 29.80, 31.85, 30.35]   # lng_min, lat_min, lng_max, lat_max
   h3_res: 8
   h3_res_fine: 9
+  min_cell_pop: 50                 # cells kept if pop > this, or with a street/stop (drops 0.07 % of people)
 
 routing:
   departure_date: "2021-03-16"     # Tuesday inside both feeds (bus 2021-01..2022-06, metro 2020-09..2021-09)
@@ -15,6 +16,7 @@ routing:
   irregularity_factor: {metro: 1.0, bus: 1.3, microbus: 1.5}   # E[W] = h/2 * (1 + CV^2)
   unreachable_min: 999.0
   stop_access_radius_m: 600        # fallback graph: stops linked to cells whose centroid is this close
+  r5_snap_radius_m: 2500           # r5py snaps cell centres to streets within this (default ~300 m left 63 cells unroutable)
   default_headway_min: 15          # fallback graph: when GTFS gives no frequency
 
 walk:
@@ -40,9 +42,11 @@ spending:
     comp: {low: 0.025, central: 0.05, high: 0.075, source: "assumption until calibrated"}
     eat: {low: 0.04, central: 0.08, high: 0.12, source: "assumption until calibrated"}
   target_mean_trip_min: {daily: 10, comp: 30, eat: 20}
+  calibration_floor_margin: 0.10     # if a target is below the nearest-cluster trip time, aim 10 % above it
   max_trip_min: 120
   induced_pct: {low: 0.0, central: 0.0, high: 0.05, source: assumption}
   share_09_electronics: {low: 0.2, central: 0.3, high: 0.4, source: assumption}
+  price_factor_to_2021: {low: 1.04, central: 1.06, high: 1.08, source: "CAPMAS urban CPI y/y ≈ 4.3–6.6 % in 2020–21 (≈5 % avg 2020); ~15 months from HIECS 2019/20 prices to mid-2021"}
   rwi_scale: {low: 0.3, central: 0.5, high: 0.8, source: "assumption: wealth factor = exp(scale × Meta RWI)"}
   local_radius_m: 1500
   n_flows: 50                      # top origin→street shifts returned for the ArcLayer
@@ -50,6 +54,9 @@ spending:
 streets:
   eps_m: {low: 100, central: 150, high: 250, source: assumption}
   min_shops: 15
+  max_extent_m: 1500             # split clusters wider than this (dense areas chain at 150 m)
+  eps_shrink: 0.75
+  eps_floor_m: 40
   footprint_join_m: 20
 
 shops:

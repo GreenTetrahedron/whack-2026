@@ -12,11 +12,39 @@ from khatt.geo import cells_for_points, from_utm
 CATS = ("daily", "comp", "eat")
 
 
-def cluster(x: np.ndarray, y: np.ndarray, eps_m: float, min_samples: int) -> np.ndarray:
-    """DBSCAN labels; -1 = noise."""
+def _extent(xy: np.ndarray) -> float:
+    return float(np.hypot(*(xy.max(axis=0) - xy.min(axis=0))))
+
+
+def cluster(x: np.ndarray, y: np.ndarray, eps_m: float, min_samples: int,
+            max_extent_m: float | None = None, shrink: float = 0.75,
+            floor_m: float = 40.0) -> np.ndarray:
+    """DBSCAN labels (-1 = noise).
+
+    With max_extent_m, any cluster wider than that is re-clustered with eps × shrink, recursively
+    (down to floor_m), because in dense Cairo a single 150 m DBSCAN chains whole districts into
+    one "street". Points that become noise in a sub-run are dropped like any DBSCAN noise.
+    """
     if len(x) == 0:
         return np.zeros(0, int)
-    return DBSCAN(eps=eps_m, min_samples=int(min_samples)).fit_predict(np.column_stack([x, y]))
+    xy = np.column_stack([x, y])
+    labels = np.full(len(xy), -1)
+    next_label = 0
+    stack = [(np.arange(len(xy)), float(eps_m))]
+    while stack:
+        idx, eps = stack.pop()
+        sub = DBSCAN(eps=eps, min_samples=int(min_samples)).fit_predict(xy[idx])
+        for k in np.unique(sub[sub >= 0]):
+            members = idx[sub == k]
+            if (max_extent_m is not None and _extent(xy[members]) > max_extent_m
+                    and eps * shrink >= floor_m):
+                stack.append((members, eps * shrink))
+            else:
+                labels[members] = next_label
+                next_label += 1
+    # stable, spatially meaningless but deterministic order: sort clusters by first member
+    order = {old: new for new, old in enumerate(pd.unique(labels[labels >= 0]))}
+    return np.array([order.get(v, -1) for v in labels])
 
 
 def footprints_near(shop_x, shop_y, bld_x, bld_y, bld_area, radius_m: float) -> np.ndarray:

@@ -1,0 +1,22 @@
+governorate,coicop,value_egp,period,basis,household_size,prices,source
+# CAPMAS, "Averages of Household Expenditure, Egypt, HIECS 2019/2020", table on report page 13:
+# "Average of Annual Per Capita Expenditure (in L.E.) by Main Groups of Expenditure, Urban".
+# Downloaded from https://erfdataportal.com/index.php/catalog/254/download/3948 (Nov 2026).
+# The report has no governorate breakdown, so urban-Egypt values are used for all three
+# governorates (Greater Cairo is almost entirely urban). 03_spending.py converts 2019/20 prices
+# to 2021 with spending.price_factor_to_2021. Used when data/raw/spending_manual.csv is absent.
+Cairo,01,5055.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Cairo,03,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Cairo,05,725.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Cairo,09,453.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Cairo,11,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Giza,01,5055.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Giza,03,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Giza,05,725.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Giza,09,453.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Giza,11,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Qalyubia,01,5055.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Qalyubia,03,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Qalyubia,05,725.1,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Qalyubia,09,453.0,annual,person,,2019/20,HIECS 2019/20 urban per capita
+Qalyubia,11,967.1,annual,person,,2019/20,HIECS 2019/20 urban per capita

@@ -71,6 +71,54 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   service 2021-01-01 → 2022-06-01) and `mdb-786` (metro, Lines 1–3, service 2020-09-24 → 2021-09-23).
   The newer feeds (`mdb-3354` metro, `mdb-3355` bus) cover only 2024–25 and the 2025 metro feed has
   Lines 1–2 only, so they are not used.
+- **Spending source: CAPMAS HIECS 2019/2020, not 2021.** The HIECS 2021 tables could not be obtained
+  (censusinfo.capmas.gov.eg does not resolve). `config/spending_hiecs_2019_20.csv` holds CAPMAS's
+  published *urban per-capita* averages by main group ("Averages of Household Expenditure, Egypt,
+  HIECS 2019/2020", report page 13, via the ERF data portal): food 5,055.0; clothing 967.1;
+  furnishings 725.1; recreation 453.0; restaurants & hotels 967.1 EGP/person/yr (2019/20 prices).
+  The report has no governorate breakdown, so all three governorates get the urban-Egypt values
+  (spatial variation comes from population, and from wealth once a wealth layer exists).
+  "Restaurants and hotels" includes hotels; small for urban households, not removed.
+  Converted to 2021 prices with `spending.price_factor_to_2021` = 1.06 (1.04–1.08): CAPMAS urban CPI
+  ran ≈ 4.3–6.6 % y/y through 2020–21, ~15 months from survey prices to mid-2021.
+  A human-filled `data/raw/spending_manual.csv` (rows with a `prices` column) overrides this table.
+- **Governorate boundaries** come from Nominatim *structured* queries (`{"state": …, "country": "Egypt"}`).
+  The free-text query "Qalyubia Governorate, Egypt" returned a building in Obour, which put 8.4 M
+  people in "Other"; 00 now rejects any result that is not an administrative boundary.
+- **OSM extract clipped for r5py.** R5 rejects street layers wider than 975,000 km² and the Egypt
+  extract is ~1.8 M km², so r5py failed and 08 fell back to scipy. `khatt/prep/osm_clip.py`
+  (pyosmium, pinned) keeps `highway=*` ways touching the bbox plus their nodes → `cairo.osm.pbf`
+  (~25 MB, ~230 × 120 km). Boundaries, rivers and other non-street ways are dropped.
+- **Walk graph built locally, not via Overpass.** The public Overpass API returned 502 "at capacity"
+  after 20 min for this bbox. 06 now builds the graph from `cairo.osm.pbf` with pyosmium
+  (`khatt/prep/walk_osm.py`): OSMnx's "walk" way filter, simplified to intersections/endpoints,
+  bidirectional, largest connected component → 641,694 nodes in ~14 s, written straight to
+  `walk_csr.npz` (no `walk_graph.pkl`). `--overpass` keeps the original OSMnx path. The loader
+  recomputes each node's r9 row from `walk_nodes_r9.parquet` at every load, so a rebuilt cell
+  index never leaves the graph stale.
+- **Overture schema change.** Current releases replace `categories` with `taxonomy`
+  {primary, hierarchy, alternates} + `basic_category`. 04 reads both; the crosswalk gained the
+  `basic_category` values (e.g. `fashion_and_apparel_store` → comp, `casual_eatery` → eat).
+  Overture covers few small grocers, so `daily` has only ~4,200 shops vs ~15,000 eating places.
+- **Streets: DBSCAN with an extent cap.** At eps = 150 m on ~100k Cairo places a single DBSCAN
+  chains whole districts (one "street" = all of Nasr City, 5,583 shops, 14 km wide). Clusters wider
+  than `streets.max_extent_m` (1,500 m) are re-clustered with eps × 0.75, recursively (floor 40 m)
+  → 1,001 streets, median width ~370 m, 66 % of retail shops kept.
+- **Cells need pop > `area.min_cell_pop` (50)** unless they hold a street or stop. WorldPop puts a
+  few people in most desert/farm cells: pop > 0 gave 5,879 cells (spec expects ~3,000); > 50 gives
+  3,710 and drops 0.07 % of the population.
+- **r5py T0**: runs on `cairo.osm.pbf` + bus + metro GTFS in ~17 min (3 GB peak). `max_time` is
+  2 × `spending.max_trip_min` (240 min), so 999 means "no route *or* longer than 240 min" — harmless,
+  since trips over 120 min are excluded from every model. Metro trips agree with the fallback
+  (Helwan–El Marg 102 vs 97 min, Maadi–Tahrir 31 vs 29). But r5py leaves gaps: 63 cells
+  (67,644 people) cannot be placed on its network at all (even with `snap_to_network` at 2,500 m,
+  `routing.r5_snap_radius_m`), and ~4.6 % of 0.5–2 km pairs between other cells come back
+  unroutable — cells linked to disconnected fragments of R5's street network. (Capping walk legs
+  at 60 min made this worse, 40 % of 2–5 km pairs, because r5py already allows walk legs up to
+  `max_time`; reverted.) 08 therefore patches r5py with the scipy fallback (`fill_from_fallback`):
+  fully unroutable cells take the fallback row/column, and any other pair r5py left unreachable
+  takes the fallback time when that is ≤ `spending.max_trip_min` (the trips the models use).
+  Everything r5py routed is kept; `T0.json` records the split.
 - **Departure date changed to Tuesday 2021-03-16** (was 2022-03-15). The metro feed has *no* service
   on 2022-03-15, so the spec date would have produced a baseline with no metro. 2021-03-16 is inside
   both feeds' calendars; real feeds' dates are unchanged (CLAUDE.md §6, 07.5).
@@ -81,15 +129,33 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   `calibrated.json` (§13), `T0.json` (how T0 was built).
 - **Fallback T0**: nodes = cells + one node per (route, direction, stop); boarding wait =
   headway/2 × irregularity[mode]; transfers go through cells. Stops link to cells within 600 m.
-- **Calibration**: geometric bisection on β ∈ [1e-4, 3]. If a target is unreachable, β sits at the
-  bound and a note is written (happens for `daily` on the synthetic world: only ~300 streets).
+- **Calibration**: geometric bisection on β ∈ [1e-4, 3]. On real data the spec targets for `daily`
+  (10 min) and `eat` (20 min) are below the floor no β can beat — the spending-weighted time to the
+  *nearest* street cluster (25.1 and 23.2 min: clusters need ≥ 15 shops, corner shops are not
+  streets). Pinning β at the cap would send everyone to the single nearest cluster, so such targets
+  become floor × (1 + `spending.calibration_floor_margin`) = +10 %. Result: β daily 0.245, comp 0.165
+  (30 min target met exactly), eat 0.268 per minute — daily/eat still decay faster than comparison.
+  With β this steep, single streets can swing by +100–250 % when a line cuts 20+ min off their
+  access (e.g. El Tayaran St, Nasr City); totals stay moderate (|dR| ≈ 3.6 % of R0 for two lines).
 - **Governorates**: OSM boundaries via Nominatim if available, else an approximate Nile/latitude rule.
 - **Wealth**: Meta RWI → `exp(spending.rwi_scale × rwi)`, normalised to a population-weighted mean of 1;
   1.0 everywhere when absent.
-- **Microbus routes**: agency name matched against `micro|paratransit|informal|shared|minibus|…`;
+- **Microbus routes**: agency name matched against `micro|paratransit|informal|shared|suzuki|…` ("Minibus licensed by CTA" is excluded: licensed, not informal);
   if nothing matches, all non-rail bus-feed routes are treated as paratransit (logged).
 
 ## Pipeline runs
 
-- **01_grid**: No governorate boundaries: used the approximate Nile/latitude rule. _(2026-11-07 22:58)_
-- **00_download**: osmium not installed: r5py uses the full Egypt OSM extract (more memory). `brew install osmium-tool` to clip to the bbox. _(2026-11-07 23:11)_
+- **03_spending**: no data/raw/spending_manual.csv: used spending_hiecs_2019_20.csv (CAPMAS HIECS 2019/20 urban per-capita averages, same for all governorates) _(2026-11-07 23:50)_
+- **03_spending**: ['2019/20'] prices × 1.06 → 2021 EGP _(2026-11-07 23:50)_
+- **03_spending**: no CAPMAS row for ['Other']: population-weighted mean of the others used _(2026-11-07 23:50)_
+- **03_spending**: wealth factor source: none (1.0 everywhere) _(2026-11-07 23:50)_
+- **07_gtfs_clean**: manual line L3W: station coordinates missing; skipped _(2026-11-08 00:25)_
+- **07_gtfs_clean**: manual line L3CU: station coordinates missing; skipped _(2026-11-08 00:25)_
+- **07_gtfs_clean**: cells need pop > 50 (or a street/stop); 0.07% of population is in dropped cells _(2026-11-08 00:26)_
+- **08_baseline_matrix**: r5py failed (exit 1); fallback used _(2026-11-08 00:27)_
+- **08_baseline_matrix**: T0 built with scipy fallback from ['bus.zip', 'metro.zip'] _(2026-11-08 00:28)_
+- **08_baseline_matrix**: T0 built with r5py from ['bus.zip', 'metro.zip'] _(2026-11-08 00:49)_
+- **08_baseline_matrix**: 72 cells could not be placed on the r5py network; their rows/columns come from the scipy fallback _(2026-11-08 01:17)_
+- **08_baseline_matrix**: T0 built with r5py (72 unroutable cells from scipy fallback) from ['bus.zip', 'metro.zip'] _(2026-11-08 01:17)_
+- **08_baseline_matrix**: r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min _(2026-11-08 01:36)_
+- **08_baseline_matrix**: T0 built with r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min from ['bus.zip', 'metro.zip'] _(2026-11-08 01:36)_

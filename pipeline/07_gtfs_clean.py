@@ -93,7 +93,12 @@ def main() -> None:
         s = feed["stops.txt"]
         stop_cells |= set(cells_for_points(pd.to_numeric(s["stop_lat"]),
                                            pd.to_numeric(s["stop_lon"]), 8))
-    keep = (grid["pop"] > 0) | grid["h3"].isin(set(streets["h3_r8"])) | grid["h3"].isin(stop_cells)
+    min_pop = float(params["area.min_cell_pop"])
+    keep = ((grid["pop"] > min_pop) | grid["h3"].isin(set(streets["h3_r8"]))
+            | grid["h3"].isin(stop_cells))
+    dropped_pop = grid.loc[~keep, "pop"].sum() / max(grid["pop"].sum(), 1)
+    decision("07_gtfs_clean", f"cells need pop > {min_pop:g} (or a street/stop); "
+             f"{dropped_pop:.2%} of population is in dropped cells")
     hexes = grid[keep].sort_values("h3").reset_index(drop=True)
     hexes.insert(1, "idx", np.arange(len(hexes), dtype=np.int32))
     hex_ids = hexes["h3"].tolist()
@@ -123,7 +128,7 @@ def main() -> None:
     if problems:
         log.warning("contract problems: %s", problems)
     summary("07_gtfs_clean", notes[:2] + [
-        f"cells kept: {len(hexes)} of {len(grid)} (pop>0 | street | stop)",
+        f"cells kept: {len(hexes)} of {len(grid)} (pop>{min_pop:g} | street | stop)",
         f"streets: {len(streets)}; r9 cells: {len(r9)}; manual feed: {manual is not None}",
     ], t0)
 

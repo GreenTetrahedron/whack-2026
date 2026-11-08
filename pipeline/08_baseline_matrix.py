@@ -25,9 +25,15 @@ from khatt.prep.common import INTERIM, PROCESSED, RAW, decision, require, setup,
 from khatt.prep.fallback_matrix import build_fallback_T0
 
 
-def osm_extract() -> Path:
+def osm_extract(bbox) -> Path:
+    """The bbox clip (R5 rejects all-of-Egypt extracts); built here if 00 has not made it."""
     clip = RAW / "cairo.osm.pbf"
-    return clip if clip.exists() else RAW / "egypt-latest.osm.pbf"
+    full = RAW / "egypt-latest.osm.pbf"
+    if not clip.exists() and full.exists():
+        from khatt.prep.osm_clip import clip_highways
+
+        clip_highways(full, clip, tuple(bbox))
+    return clip
 
 
 def r5py_worker(osm: str, feeds: list[str], hexes_path: str, params_tree: dict,
@@ -50,6 +56,7 @@ def r5py_worker(osm: str, feeds: list[str], hexes_path: str, params_tree: dict,
         departure_time_window=timedelta(minutes=int(params["routing.departure_time_window_min"])),
         transport_modes=[r5py.TransportMode.TRANSIT, r5py.TransportMode.WALK],
         percentiles=[50], speed_walking=float(params["walk.speed_kmh"]),
+        snap_to_network=int(params["routing.r5_snap_radius_m"]),
         max_time=timedelta(minutes=int(params["spending.max_trip_min"]) * 2),
     )
     df = pd.DataFrame(ttm)
@@ -62,7 +69,7 @@ def r5py_worker(osm: str, feeds: list[str], hexes_path: str, params_tree: dict,
 
 
 def run_r5py(feeds, params, out: Path, timeout_min: float, log) -> bool:
-    osm = osm_extract()
+    osm = osm_extract(params["area.bbox"])
     if not osm.exists():
         log.warning("no OSM extract for r5py")
         return False
@@ -99,6 +106,26 @@ def run_fallback(feeds, params, hexes: pd.DataFrame, log) -> np.ndarray:
                              hexes["lng"].to_numpy(), routes, params)
 
 
+def fill_from_fallback(T0: np.ndarray, F: np.ndarray, unreachable: float,
+                       max_fill_min: float) -> tuple[np.ndarray, int, int]:
+    """Patch r5py gaps with the scipy fallback.
+
+    * cells r5py could not route at all (whole row unreachable apart from the diagonal) take
+      their row and column from F;
+    * any other pair r5py left unreachable takes F where F <= max_fill_min (a trip the models use);
+      r5py has no route there because the cell is linked to a disconnected street fragment.
+    Everything r5py did route is kept. Returns (T0, n_dead_cells, n_pairs_filled).
+    """
+    T0 = T0.copy()
+    off_diag = (T0 >= unreachable).sum(axis=1) - (np.diag(T0) >= unreachable)
+    dead = np.flatnonzero(off_diag >= T0.shape[0] - 1)
+    T0[dead, :] = F[dead, :]
+    T0[:, dead] = F[:, dead]
+    gap = (T0 >= unreachable) & (F <= max_fill_min)
+    T0[gap] = F[gap]
+    return T0, len(dead), int(gap.sum())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--fallback", action="store_true", help="skip r5py")
@@ -120,8 +147,16 @@ def main() -> None:
         T0 = run_fallback(feeds, params, hexes, log)
     else:
         T0 = np.load(out)
-    np.fill_diagonal(T0, float(params["access.intracell_min"]))
     unreachable = float(params["routing.unreachable_min"])
+    if method == "r5py":
+        r5_reach = float((T0 < unreachable).mean())
+        F = run_fallback(feeds, params, hexes, log)
+        T0, n_dead, n_pairs = fill_from_fallback(T0, F, unreachable,
+                                                 float(params["spending.max_trip_min"]))
+        method = (f"r5py ({r5_reach:.1%} pairs routed); scipy fallback for {n_dead} unroutable "
+                  f"cells and {n_pairs} other pairs <= {params['spending.max_trip_min']} min")
+        decision("08_baseline_matrix", method)
+    np.fill_diagonal(T0, float(params["access.intracell_min"]))
     T0 = np.where(np.isfinite(T0), T0, unreachable).astype(np.float32)
     np.save(out, T0)
     meta = {"method": method, "feeds": [f.name for f in feeds], "built": time.ctime(),

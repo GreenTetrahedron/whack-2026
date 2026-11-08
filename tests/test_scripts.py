@@ -62,3 +62,36 @@ def test_precompute_and_mock(world_dir, tmp_path, monkeypatch):
     for name in ("evaluate.json", "baseline.json", "evaluate_request.json"):
         assert (tmp_path / "mock" / name).stat().st_size > 100
     assert os.environ["KHATT_PROCESSED_DIR"] == str(world_dir)
+
+
+def test_spending_table_conversions(tmp_path):
+    mod = _load(ROOT / "pipeline" / "03_spending.py")
+    committed, notes = mod.per_capita_table(ROOT / "config" / "spending_hiecs_2019_20.csv", 1.06)
+    assert set(committed) == {"Cairo", "Giza", "Qalyubia"}
+    assert committed["Cairo"]["01"] == pytest.approx(5055.0 * 1.06)
+    assert committed["Giza"]["11"] == pytest.approx(967.1 * 1.06)
+    assert any("2019/20" in n for n in notes)
+
+    csv = tmp_path / "s.csv"
+    csv.write_text("governorate,coicop,value_egp,period,basis,household_size,prices,source\n"
+                   "Cairo,1,1200,monthly,household,4,2021,x\n"
+                   "Cairo,11,800,annual,person,,2019/20,x\n")
+    table, _ = mod.per_capita_table(csv, 1.1)
+    assert table["Cairo"]["01"] == pytest.approx(1200 * 12 / 4)
+    assert table["Cairo"]["11"] == pytest.approx(880.0)
+
+
+def test_fill_from_fallback():
+    import numpy as np
+
+    mod = _load(ROOT / "pipeline" / "08_baseline_matrix.py")
+    T0 = np.array([[4, 10, 999, 999], [12, 4, 999, 999], [999, 999, 4, 999],
+                   [999, 50, 999, 4]], np.float32)
+    F = np.array([[4, 20, 30, 300], [20, 4, 40, 90], [35, 45, 4, 60], [60, 55, 65, 4]], np.float32)
+    out, n_dead, n_pairs = mod.fill_from_fallback(T0, F, 999.0, 120.0)
+    assert n_dead == 1, "cell 2 is unreachable from everywhere"
+    assert out[2].tolist() == [35, 45, 4, 60] and out[:, 2].tolist() == [30, 40, 4, 65]
+    assert out[0, 1] == 10 and out[3, 1] == 50, "pairs r5py routed keep the r5py value"
+    assert out[1, 3] == 90 and out[3, 0] == 60, "gaps filled where the fallback is <= 120 min"
+    assert out[0, 3] == 999, "fallback > 120 min stays unreachable"
+    assert n_pairs == 2

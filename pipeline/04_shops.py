@@ -34,6 +34,22 @@ def _street_from_address(addresses) -> str | None:
     return LEADING_NUMBER.sub("", str(free)).split(",")[0].strip() or None
 
 
+def overture_categories(df: pd.DataFrame) -> list[list[str]]:
+    """Most specific first. Releases since 2025 use `taxonomy` {primary, hierarchy, alternates} +
+    `basic_category`; older ones use `categories` {primary, alternate}."""
+    if "taxonomy" in df.columns:
+        basic = df["basic_category"] if "basic_category" in df.columns else [None] * len(df)
+        out = []
+        for tax, b in zip(df["taxonomy"], basic):
+            tax = tax or {}
+            hierarchy = list(tax.get("hierarchy") if tax.get("hierarchy") is not None else [])
+            alternates = list(tax.get("alternates") if tax.get("alternates") is not None else [])
+            out.append([tax.get("primary"), *alternates, b, *hierarchy[::-1]])
+        return out
+    return [[_get(c, "primary")] + list(_get(c, "alternate") or []) if c is not None else []
+            for c in df["categories"]]
+
+
 def overture_places(path, params, cw, log) -> pd.DataFrame:
     df = pd.read_parquet(path)
     n_raw = len(df)
@@ -44,8 +60,7 @@ def overture_places(path, params, cw, log) -> pd.DataFrame:
     geom = shapely.from_wkb(df["geometry"].to_numpy()) if df["geometry"].dtype == object else \
         gpd.GeoSeries(df["geometry"]).to_numpy()
     pts = shapely.point_on_surface(geom)
-    cats = [[_get(c, "primary")] + list(_get(c, "alternate") or []) if c is not None else []
-            for c in df["categories"]]
+    cats = overture_categories(df)
     brand = df["brand"] if "brand" in df.columns else pd.Series([None] * len(df))
     out = pd.DataFrame({
         "source": "overture",

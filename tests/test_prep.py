@@ -92,6 +92,25 @@ def test_cluster_and_build_streets():
     assert final["hex_idx"].dtype == np.int32 and final["A_comp"].dtype == np.float32
 
 
+def test_cluster_splits_chained_districts():
+    rng = np.random.default_rng(1)
+    cx, cy = to_utm(30.05, 31.24)
+    # two dense blobs 3 km apart joined by a continuous 100 m-spaced chain of shops
+    blob_a = np.column_stack([cx + rng.normal(0, 40, 60), cy + rng.normal(0, 40, 60)])
+    blob_b = np.column_stack([cx + 3000 + rng.normal(0, 40, 60), cy + rng.normal(0, 40, 60)])
+    chain = np.column_stack([cx + np.arange(0, 3000, 100.0), np.full(30, cy)])
+    chain = np.repeat(chain, 20, axis=0) + rng.normal(0, 5, (600, 2))
+    xy = np.vstack([blob_a, blob_b, chain])
+    plain = cluster(xy[:, 0], xy[:, 1], 150, 15)
+    assert len(set(plain) - {-1}) == 1, "a single DBSCAN chains everything"
+    capped = cluster(xy[:, 0], xy[:, 1], 150, 15, max_extent_m=1500)
+    ids = set(capped) - {-1}
+    assert len(ids) >= 2
+    for k in ids:
+        pts = xy[capped == k]
+        assert np.hypot(*(pts.max(0) - pts.min(0))) <= 1500
+
+
 # ---------------- spending ----------------
 def test_allocate_preserves_governorate_totals():
     pop = np.array([100, 200, 300, 400.0])
@@ -240,3 +259,57 @@ def test_fallback_matrix(params):
     T_iso = build_fallback_T0(cells + [lone], np.append(lat, 30.30), np.append(lng, 31.80), [],
                               params)
     assert T_iso[0, -1] == 999.0
+
+
+# ---------------- OSM clip ----------------
+def test_clip_highways(tmp_path):
+    osmium = pytest.importorskip("osmium")
+    from khatt.prep.osm_clip import clip_highways
+
+    src = tmp_path / "in.osm.pbf"
+    nodes = {1: (31.20, 30.00), 2: (31.21, 30.01),      # inside bbox
+             3: (31.30, 30.05), 4: (33.00, 25.00),      # 3 inside, 4 far outside
+             5: (34.00, 26.00), 6: (34.10, 26.10)}      # outside
+    with osmium.SimpleWriter(str(src)) as w:
+        for nid, (lng, lat) in nodes.items():
+            w.add_node(osmium.osm.mutable.Node(id=nid, location=(lng, lat), version=1))
+        w.add_way(osmium.osm.mutable.Way(id=10, nodes=[1, 2], tags={"highway": "residential"}))
+        w.add_way(osmium.osm.mutable.Way(id=11, nodes=[3, 4], tags={"highway": "trunk"}))
+        w.add_way(osmium.osm.mutable.Way(id=12, nodes=[5, 6], tags={"highway": "primary"}))
+        w.add_way(osmium.osm.mutable.Way(id=13, nodes=[1, 3], tags={"boundary": "administrative"}))
+    dst = tmp_path / "out.osm.pbf"
+    assert clip_highways(src, dst, (31.0, 29.9, 31.5, 30.2)) == 2
+    ways = {w.id for w in osmium.FileProcessor(str(dst), osmium.osm.WAY)}
+    node_ids = {n.id for n in osmium.FileProcessor(str(dst), osmium.osm.NODE)}
+    assert ways == {10, 11}, "crossing highway kept whole; outside highway and boundary dropped"
+    assert node_ids == {1, 2, 3, 4}
+
+
+def test_walk_graph_from_pbf(tmp_path):
+    osmium = pytest.importorskip("osmium")
+    from khatt.prep.walk_osm import walk_graph_arrays, walkable
+
+    assert walkable({"highway": "residential"}) and walkable({"highway": "trunk"})
+    assert not walkable({"highway": "motorway"}) and not walkable({"highway": "cycleway"})
+    assert not walkable({"highway": "footway", "access": "private"})
+    src = tmp_path / "w.osm.pbf"
+    # a T-junction: 1-2-3 straight road, 2-4 side street; 5-6 an isolated path; 7-8 motorway
+    pts = {1: (31.200, 30.000), 2: (31.201, 30.000), 3: (31.202, 30.000), 4: (31.201, 30.001),
+           9: (31.2015, 30.0005), 5: (31.30, 30.10), 6: (31.301, 30.10), 7: (31.4, 30.2),
+           8: (31.41, 30.2)}
+    with osmium.SimpleWriter(str(src)) as w:
+        for nid, loc in pts.items():
+            w.add_node(osmium.osm.mutable.Node(id=nid, location=loc, version=1))
+        w.add_way(osmium.osm.mutable.Way(id=1, nodes=[1, 2, 9, 3], tags={"highway": "residential"}))
+        w.add_way(osmium.osm.mutable.Way(id=2, nodes=[2, 4], tags={"highway": "footway"}))
+        w.add_way(osmium.osm.mutable.Way(id=3, nodes=[5, 6], tags={"highway": "path"}))
+        w.add_way(osmium.osm.mutable.Way(id=4, nodes=[7, 8], tags={"highway": "motorway"}))
+    e, _x, _y, minutes = walk_graph_arrays(src, 75.0)
+    assert set(e.node_ids.tolist()) == {1, 2, 3, 4}, "node 9 simplified away; island and motorway gone"
+    assert len(e.src) == 6, "3 undirected edges, both directions"
+    pos = {nid: k for k, nid in enumerate(e.node_ids)}
+    length = {(e.node_ids[a], e.node_ids[b]): m for a, b, m in zip(e.src, e.dst, e.length_m)}
+    # 9 sits off the straight line: the 2→3 edge length follows the way through it
+    assert length[(2, 3)] > 1.3 * length[(1, 2)], "2→3 passes through node 9"
+    assert np.isclose(minutes.max() * 75.0, e.length_m.max())
+    assert len(pos) == 4
