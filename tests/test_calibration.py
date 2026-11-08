@@ -14,10 +14,10 @@ def test_mean_trip_time_decreases_with_beta(world, params):
 
 def test_fit_hits_targets(world, params):
     out = fit_beta(world, params)
-    for cat, target in out["target_mean_min"].items():
-        if not any(n.startswith(cat) for n in out["notes"]):
-            assert abs(out["achieved_mean_min"][cat] - target) < 0.05
-        assert out["beta"][cat] > 0
+    for cat, target in out["effective_target_min"].items():
+        assert abs(out["achieved_mean_min"][cat] - target) < 0.05, cat
+        assert 0 < out["beta"][cat] < 3.0, "never pinned at the cap"
+        assert target >= out["target_mean_min"][cat]
 
 
 def test_montecarlo_reproducible(world, params, downtown_line):

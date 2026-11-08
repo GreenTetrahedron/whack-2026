@@ -8,13 +8,13 @@ Anything that needs a login or fails is listed at the end with what to fetch by 
 from __future__ import annotations
 
 import argparse
-import shutil
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
-from khatt.prep.common import RAW, decision, setup, summary
+import pandas as pd
+
+from khatt.prep.common import RAW, setup, summary
 
 BBOX_KEY = "area.bbox"
 URLS = {
@@ -28,25 +28,26 @@ URLS = {
                  ("https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2026/EGY/v1/"
                  "100m/constrained/egy_pop_2026_CN_100m_R2025A_v1.tif")),
 }
-SPENDING_TEMPLATE = """governorate,coicop,value_egp,period,basis,household_size,source
-# Fill from CAPMAS HIECS 2021 (censusinfo.capmas.gov.eg, catalog 747), URBAN, 2021 EGP.
+SPENDING_TEMPLATE = """governorate,coicop,value_egp,period,basis,household_size,prices,source
+# Optional override of config/spending_hiecs_2019_20.csv (CAPMAS HIECS 2019/20, used by default).
 # coicop: 01 food, 03 clothing, 05 furnishings, 09 recreation, 11 restaurants & hotels
 # period: annual | monthly ; basis: household | person ; household_size needed when basis=household
-Cairo,01,,annual,household,,
-Cairo,03,,annual,household,,
-Cairo,05,,annual,household,,
-Cairo,09,,annual,household,,
-Cairo,11,,annual,household,,
-Giza,01,,annual,household,,
-Giza,03,,annual,household,,
-Giza,05,,annual,household,,
-Giza,09,,annual,household,,
-Giza,11,,annual,household,,
-Qalyubia,01,,annual,household,,
-Qalyubia,03,,annual,household,,
-Qalyubia,05,,annual,household,,
-Qalyubia,09,,annual,household,,
-Qalyubia,11,,annual,household,,
+# prices: 2021, or the survey year (converted with spending.price_factor_to_2021)
+Cairo,01,,annual,household,,2021,
+Cairo,03,,annual,household,,2021,
+Cairo,05,,annual,household,,2021,
+Cairo,09,,annual,household,,2021,
+Cairo,11,,annual,household,,2021,
+Giza,01,,annual,household,,2021,
+Giza,03,,annual,household,,2021,
+Giza,05,,annual,household,,2021,
+Giza,09,,annual,household,,2021,
+Giza,11,,annual,household,,2021,
+Qalyubia,01,,annual,household,,2021,
+Qalyubia,03,,annual,household,,2021,
+Qalyubia,05,,annual,household,,2021,
+Qalyubia,09,,annual,household,,2021,
+Qalyubia,11,,annual,household,,2021,
 """
 UA = "khatt-pipeline/0.1 (hackathon research)"
 
@@ -104,11 +105,22 @@ def osm_shops(bbox, dest: Path) -> None:
 
 
 def governorates(dest: Path) -> None:
+    """Admin boundaries via Nominatim structured queries. Free-text queries can return the wrong
+    entity (e.g. a building named after the governorate), so every result must be an
+    administrative boundary of plausible size."""
+    import geopandas as gpd
     import osmnx as ox
 
-    names = ["Cairo Governorate, Egypt", "Giza Governorate, Egypt", "Qalyubia Governorate, Egypt"]
-    gdf = ox.geocode_to_gdf(names)
-    gdf["governorate"] = ["Cairo", "Giza", "Qalyubia"]
+    parts = []
+    for name in ("Cairo", "Giza", "Qalyubia"):
+        g = ox.geocode_to_gdf({"state": name, "country": "Egypt"})
+        r = g.iloc[0]
+        if r.get("class") != "boundary" or r.get("type") != "administrative" \
+                or r.geometry.area < 0.05:
+            raise RuntimeError(f"{name}: geocoder returned {r.get('display_name')} "
+                               f"({r.get('class')}/{r.get('type')}), not the governorate")
+        parts.append(g.iloc[[0]].assign(governorate=name))
+    gdf = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs="EPSG:4326")
     gdf[["governorate", "geometry"]].to_file(dest, driver="GeoJSON")
 
 
@@ -160,24 +172,21 @@ def main() -> None:
          "optional: save Cairo/Giza/Qalyubia boundaries as GeoJSON with a 'governorate' column; "
          "01_grid.py otherwise uses an approximate rule")
 
-    # OSM clip for r5py (smaller network, less memory)
+    # OSM clip for r5py: R5 rejects street layers > 975,000 km² (all of Egypt is ~1.8 M km²)
     clip = RAW / "cairo.osm.pbf"
-    if want("osm_pbf") and (RAW / URLS["osm_pbf"][0]).exists() and not clip.exists():
-        if shutil.which("osmium"):
-            b = ",".join(map(str, bbox))
-            subprocess.run(["osmium", "extract", "-b", b, str(RAW / URLS["osm_pbf"][0]), "-o",
-                            str(clip)], check=False)
-        else:
-            decision("00_download", "osmium not installed: r5py uses the full Egypt OSM extract "
-                     "(more memory). `brew install osmium-tool` to clip to the bbox.")
+    if want("osm_pbf") and (RAW / URLS["osm_pbf"][0]).exists() and (args.force or not clip.exists()):
+        from khatt.prep.osm_clip import clip_highways
 
-    # Spending: CAPMAS tables are not machine-downloadable → human fills a CSV
+        n = clip_highways(RAW / URLS["osm_pbf"][0], clip, tuple(bbox))
+        log.info("osm_pbf: clipped to bbox → %s (%d highway ways)", clip.name, n)
+
+    # Spending: CAPMAS tables are not machine-downloadable. 03 uses the committed HIECS 2019/20
+    # table unless a human provides data/raw/spending_manual.csv (template below).
     manual = RAW / "spending_manual.csv"
     if want("spending") and not manual.exists():
-        template = RAW / "spending_manual.template.csv"
-        template.write_text(SPENDING_TEMPLATE)
-        failures.append(f"spending: fill {template} from CAPMAS HIECS 2021 tables and save it as "
-                        f"{manual}")
+        (RAW / "spending_manual.template.csv").write_text(SPENDING_TEMPLATE)
+        log.info("spending: using config/spending_hiecs_2019_20.csv (optional override: "
+                 "data/raw/spending_manual.csv, template written)")
 
     if want("wealth") and not any((RAW / n).exists() for n in ("rwi_egypt.csv", "viirs.tif")):
         log.info("wealth (optional): no Meta RWI (data/raw/rwi_egypt.csv) or VIIRS "

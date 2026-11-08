@@ -30,7 +30,7 @@ ID_COLUMNS = {
     "fare_attributes.txt": ["fare_id", "agency_id"],
 }
 METRO_TYPES = {1, 2, 12}  # subway/metro, rail (LRT), monorail
-MICROBUS_PATTERN = re.compile(r"micro|paratransit|informal|shared|minibus|suzuki|tomnaya|mashroo",
+MICROBUS_PATTERN = re.compile(r"micro|paratransit|informal|shared|suzuki|tomnaya|mashroo",
                               re.IGNORECASE)
 
 Feed = dict[str, pd.DataFrame]

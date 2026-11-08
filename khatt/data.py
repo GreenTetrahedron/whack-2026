@@ -116,25 +116,33 @@ def collapse_repeats(seq: np.ndarray) -> np.ndarray:
     return seq[keep]
 
 
+def _node_r9(path: Path, r9: pd.DataFrame, node_ids: np.ndarray) -> np.ndarray:
+    """Row in the current r9 table for each walk node (-1 if none). Recomputed at every load so the
+    walk graph stays valid when 07 rebuilds the cell index."""
+    nodes_file = path / "walk_nodes_r9.parquet"
+    if not nodes_file.exists() or not len(r9):
+        return np.full(len(node_ids), -1, np.int64)
+    nodes = pd.read_parquet(nodes_file)
+    r9_row = pd.Series(np.arange(len(r9)), index=r9["h3"].to_numpy())
+    cell_of = pd.Series(nodes["h3_r9"].to_numpy(), index=nodes["node_id"].to_numpy())
+    cells = cell_of.reindex(node_ids).to_numpy()
+    return r9_row.reindex(cells).fillna(-1).to_numpy(np.int64)
+
+
 def _load_walk(path: Path, r9: pd.DataFrame) -> WalkGraph | None:
     csr = path / "walk_csr.npz"
     pkl = path / "walk_graph.pkl"
     if csr.exists() and (not pkl.exists() or csr.stat().st_mtime >= pkl.stat().st_mtime):
-        return WalkGraph.load(csr)
+        walk = WalkGraph.load(csr)
+        walk.node_r9 = _node_r9(path, r9, walk.node_ids)
+        return walk
     if not pkl.exists():
         log.warning("No walk graph in %s: catchments and pass-by spending disabled", path)
         return None
     with open(pkl, "rb") as fh:
         G = pickle.load(fh)
-    node_r9_map = {}
-    nodes_file = path / "walk_nodes_r9.parquet"
-    if nodes_file.exists() and len(r9):
-        r9_row = {h: k for k, h in enumerate(r9["h3"])}
-        nodes = pd.read_parquet(nodes_file)
-        node_r9_map = {
-            nid: r9_row.get(cell, -1) for nid, cell in zip(nodes["node_id"], nodes["h3_r9"])
-        }
-    walk = WalkGraph.from_networkx(G, node_r9_map)
+    walk = WalkGraph.from_networkx(G)
+    walk.node_r9 = _node_r9(path, r9, walk.node_ids)
     try:
         walk.save(csr)
     except OSError:
