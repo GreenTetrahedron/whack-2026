@@ -264,9 +264,9 @@ def assemble(world, params: Params, sc: Scenario, sp, ff, rt, inf, rent_cells,
     min_pct = float(params["output.min_abs_dR_pct"])
     report = (np.abs(dR_pct) > min_pct) | (rt.risk != "green") | (ff.passby_egp > 0)
     F = spending.flow_matrix(world, sp)
-    own_flows = spending.street_flows(world, F, np.flatnonzero(report),
-                                      int(params["spending.n_street_flows"]),
-                                      float(params["spending.flow_min_share"]))
+    own_flows = spending.street_transfers(world, sp, np.flatnonzero(report),
+                                          int(params["spending.n_street_flows"]),
+                                          float(params["spending.flow_min_share"]))
     streets = []
     for k in np.flatnonzero(report):
         streets.append({

@@ -59,13 +59,12 @@ export default function App() {
 
   const [result, setResult] = useState<EvalResult | null>(null);
   const [evaluatedKey, setEvaluatedKey] = useState("");
-  const [roundTripMs, setRoundTripMs] = useState(0);
   const [loading, setLoading] = useState(false);
   const [evalError, setEvalError] = useState<string | null>(null);
 
   const [view, setView] = useState<"before" | "after">("after");
   const [toggles, setToggles] = useState<LayerToggles>({
-    flows: true,
+    flows: false, // a street's flows show when it is clicked; this is the all-streets overview
     rent: false,
     footfall: false,
     microbus: true,
@@ -158,10 +157,8 @@ export default function App() {
     }
     setLoading(true);
     setEvalError(null);
-    const t = performance.now();
     try {
       const res = await postJSON<EvalResult>("/evaluate", requestBody);
-      setRoundTripMs(performance.now() - t);
       setResult(res);
       setEvaluatedKey(requestKey);
       setView("after");
@@ -291,7 +288,6 @@ export default function App() {
         {result && (
           <Results
             result={result}
-            roundTripMs={roundTripMs}
             stale={stale}
             lines={lines}
             view={view}

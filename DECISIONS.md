@@ -223,6 +223,23 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - **Arrowheads on blue flows** point from the residents to the street that gains their
   spending. Red flows get none: that money leaves the street for other shops, not for the
   residents' end of the line, so an arrow there would point the wrong way.
+- **No backend timings panel.** The sidebar's "What the backend did" section (server and
+  network time, per-step bar) was removed at the team's request; CLAUDE.md §11 asks to
+  display `elapsed_ms`. `/evaluate` still returns `elapsed_ms` and `timings_ms`. Its
+  warnings and the "lines changed since this run" notice moved to the top of Results.
+- **Flows only on click.** After Construct the map shows coloured streets but no flow lines;
+  clicking a street shows its own (with arrowheads), and a hint says so. The "All flows"
+  checkbox (off by default) still draws the overview of the largest shifts.
+- **A clicked street shows street-to-street moves**, not residents' areas: for a gaining
+  street, which streets lose the money it gains; for a losing street, where its money goes.
+  An origin's spending only moves between streets (ΔP sums to 0 per origin and category), so
+  each origin's gain at street b is split across the streets where it now spends less, in
+  proportion to those losses, per category, then summed over origins
+  (`spending.net_inflow`). Lines show the net of the two directions and run red (loses) →
+  blue (gains) with the arrow at the gaining end; a street's net moves sum to its own dR
+  (tested). The proportional split is an assumption: the Huff model says how much each
+  origin moves, not which street a given pound came from. The "All flows" overview is
+  unchanged (residents' areas → streets).
 
 ## Data storage
 

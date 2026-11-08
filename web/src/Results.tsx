@@ -3,22 +3,10 @@ import type { LayerToggles } from "./MapView";
 import type { DraftLine, EvalResult, StreetResult } from "./types";
 import { egp, num, pct, RISK_COLOR } from "./format";
 
-// What each timed step in khatt/evaluate.py does, in plain words.
-const STEPS: { key: string; label: string; what: string }[] = [
-  { key: "engine_setup", label: "Line graph", what: "Snap stations to cells, ride times, best paths between all stations incl. transfers (Floyd–Warshall)" },
-  { key: "overlay", label: "Travel times", what: "New door-to-door times T1 = min(today, walk → ride the new line → walk) for every origin cell (numba)" },
-  { key: "spending", label: "Spending", what: "Huff model: re-split each neighbourhood’s shopping budget across streets using the new travel times" },
-  { key: "footfall", label: "Footfall", what: "Riders per new station from its 10-min walk catchment, then pass-by spending on nearby streets" },
-  { key: "rents", label: "Rents", what: "Market potential near stations → rent index; compare with revenue change → margin-squeeze risk" },
-  { key: "informal", label: "Microbuses", what: "Which microbus trips get faster by metro (competing) or connect to it (feeder); vendor pitches" },
-];
-const STEP_COLORS = ["#6c5ce7", "#0984e3", "#00b894", "#fdcb6e", "#e17055", "#d63031"];
-
 type Tab = "spending" | "footfall" | "rents" | "microbus" | "lines";
 
 export default function Results(props: {
   result: EvalResult;
-  roundTripMs: number;
   stale: boolean;
   lines: DraftLine[];
   view: "before" | "after";
@@ -35,6 +23,14 @@ export default function Results(props: {
     <>
       <section>
         <h2>Results</h2>
+        {props.stale && <div className="warnbox">The lines or assumptions changed since this run — press Construct again.</div>}
+        {result.warnings.length > 0 && (
+          <ul className="warnings">
+            {result.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
         <div className="row">
           <div className="seg">
             <button className={props.view === "before" ? "on" : ""} onClick={() => props.setView("before")}>
@@ -45,7 +41,7 @@ export default function Results(props: {
             </button>
           </div>
           <div className="layer-toggles">
-            <Check on={toggles.flows} onClick={() => toggle("flows")} label="Flows" />
+            <Check on={toggles.flows} onClick={() => toggle("flows")} label="All flows" />
             <Check on={toggles.rent} onClick={() => toggle("rent")} label="Rent hexes" />
             <Check on={toggles.footfall} onClick={() => toggle("footfall")} label="Footfall" />
             <Check on={toggles.microbus} onClick={() => toggle("microbus")} label="Microbus" />
@@ -271,40 +267,6 @@ export default function Results(props: {
         )}
       </section>
     </>
-  );
-}
-
-function Timings({ result, roundTripMs }: { result: EvalResult; roundTripMs: number }) {
-  const steps = STEPS.filter((s) => result.timings_ms[s.key] !== undefined);
-  const total = steps.reduce((a, s) => a + result.timings_ms[s.key], 0) || 1;
-  return (
-    <div className="timings">
-      <div className="time-head">
-        <b>{Math.round(result.elapsed_ms)} ms</b> on the server
-        <span className="muted"> · {Math.round(roundTripMs)} ms incl. network</span>
-        <span className={result.elapsed_ms < 2000 ? "ok" : "bad"}> {result.elapsed_ms < 2000 ? "✓ under 2 s" : "over 2 s"}</span>
-      </div>
-      <div className="stack">
-        {steps.map((s, i) => (
-          <div
-            key={s.key}
-            style={{ width: `${(100 * result.timings_ms[s.key]) / total}%`, background: STEP_COLORS[i] }}
-            title={`${s.label}: ${result.timings_ms[s.key].toFixed(0)} ms`}
-          />
-        ))}
-      </div>
-      <ol className="steps">
-        {steps.map((s, i) => (
-          <li key={s.key}>
-            <span className="dot" style={{ background: STEP_COLORS[i] }} />
-            <div>
-              <b>{s.label}</b> <span className="muted">{result.timings_ms[s.key].toFixed(0)} ms</span>
-              <div className="small muted">{s.what}</div>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }
 

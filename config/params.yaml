@@ -52,7 +52,7 @@ spending:
   local_radius_m: 1500
   n_flows: 20                      # top origin→street shifts returned for the ArcLayer (at most)
   flow_min_share: 0.1              # ...and none smaller than this share of the largest (also per clicked street)
-  n_street_flows: 8                # per reported street: its own top shifts, shown when clicked
+  n_street_flows: 8                # per reported street: its largest money moves with other streets, shown when clicked
 
 streets:
   eps_m: {low: 100, central: 150, high: 250, source: assumption}
