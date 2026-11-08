@@ -34,7 +34,7 @@ export default function Results(props: {
   return (
     <>
       <section>
-        <h2>3 · Results</h2>
+        <h2>Results</h2>
         <div className="row">
           <div className="seg">
             <button className={props.view === "before" ? "on" : ""} onClick={() => props.setView("before")}>
@@ -78,10 +78,6 @@ export default function Results(props: {
                 [num(t.streets_losing), `streets lose (${t.local_losers} near a new station)`],
               ]}
             />
-            <p className="explain">
-              Total spending is fixed, so it only moves: streets the new line makes easier to reach take customers from
-              streets it doesn’t. Gains and losses sum to ≈ 0 ({egp(t.dR_egp, true)}).
-            </p>
             <StreetTable
               title="Biggest winners"
               rows={[...result.streets].filter((s) => s.dR_egp > 0).sort((a, b) => b.dR_egp - a.dR_egp).slice(0, 8)}

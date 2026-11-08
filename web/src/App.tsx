@@ -187,7 +187,7 @@ export default function App() {
         </header>
 
         <section>
-          <h2>1 · Draw your lines</h2>
+          <h2>Draw your lines</h2>
           <div className="lines">
             {lines.map((l) => (
               <div
