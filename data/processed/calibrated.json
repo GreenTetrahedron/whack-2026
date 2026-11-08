@@ -1,0 +1,27 @@
+{
+  "beta": {
+    "daily": 0.3358692209797465,
+    "comp": 0.18266392657592637,
+    "eat": 0.3549909201571598
+  },
+  "achieved_mean_min": {
+    "daily": 23.155,
+    "comp": 29.997,
+    "eat": 22.689
+  },
+  "target_mean_min": {
+    "daily": 10.0,
+    "comp": 30.0,
+    "eat": 20.0
+  },
+  "effective_target_min": {
+    "daily": 23.16,
+    "comp": 30.0,
+    "eat": 22.68
+  },
+  "notes": [
+    "daily: target 10.0 min is below the nearest-cluster floor 21.1 min; calibrated to 23.16 (floor + 10%)",
+    "eat: target 20.0 min is below the nearest-cluster floor 20.6 min; calibrated to 22.68 (floor + 10%)"
+  ],
+  "fitted_at": "2026-11-08 04:04:31"
+}

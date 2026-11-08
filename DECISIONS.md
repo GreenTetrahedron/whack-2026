@@ -109,21 +109,33 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - **Cells need pop > `area.min_cell_pop` (50)** unless they hold a street or stop. WorldPop puts a
   few people in most desert/farm cells: pop > 0 gave 5,879 cells (spec expects ~3,000); > 50 gives
   3,710 and drops 0.07 % of the population.
-- **r5py T0**: runs on `cairo.osm.pbf` + bus + metro GTFS in ~17 min (3 GB peak). `max_time` is
+- **r5py T0**: runs on `cairo.osm.pbf` + bus + metro GTFS in ~24 min (3 GB peak). `max_time` is
   2 × `spending.max_trip_min` (240 min), so 999 means "no route *or* longer than 240 min" — harmless,
-  since trips over 120 min are excluded from every model. Metro trips agree with the fallback
-  (Helwan–El Marg 102 vs 97 min, Maadi–Tahrir 31 vs 29). But r5py leaves gaps: 63 cells
-  (67,644 people) cannot be placed on its network at all (even with `snap_to_network` at 2,500 m,
-  `routing.r5_snap_radius_m`), and ~4.6 % of 0.5–2 km pairs between other cells come back
-  unroutable — cells linked to disconnected fragments of R5's street network. (Capping walk legs
-  at 60 min made this worse, 40 % of 2–5 km pairs, because r5py already allows walk legs up to
-  `max_time`; reverted.) 08 therefore patches r5py with the scipy fallback (`fill_from_fallback`):
-  fully unroutable cells take the fallback row/column, and any other pair r5py left unreachable
-  takes the fallback time when that is ≤ `spending.max_trip_min` (the trips the models use).
-  Everything r5py routed is kept; `T0.json` records the split.
+  since trips over 120 min are excluded from every model. **Routing points**: each cell's trips start
+  and end at the nearest node of the main connected walk network (06), not the centroid (median move
+  76 m, p90 316 m; `routing_points` in 08, written to `data/interim/routing_points.parquet`). From
+  centroids R5 linked 63 cells (67,644 people) to disconnected fragments and could not route them
+  even with `snap_to_network` at 2,500 m; with routing points 10 cells remain. (Capping walk legs at
+  60 min made gaps worse — r5py already allows walk legs up to `max_time`; reverted.) 08 still
+  patches what r5py leaves with the scipy fallback (`fill_from_fallback`): unroutable cells take the
+  fallback row/column, any other gap takes the fallback time when ≤ `spending.max_trip_min`.
+  Current split (`T0.json`): 10 cells + 119,138 pairs from the fallback, ~3–6 % of < 5 km pairs,
+  about half of them pairs r5py routed in the other direction (destination-side snapping). Where
+  both route, r5py is a median 21 min faster than the fallback overall, but only 5–8 min on the
+  short pairs that get filled. Raw r5py output is kept as `T0_r5py.npy`.
+  Check pairs (10:00): Tahrir→Ramses 18 min, Giza Sq→Tahrir 26, Imbaba→Tahrir 39, Nasr City→Tahrir
+  46, Heliopolis→Maadi 56, Haram→Tahrir 51.
 - **Departure date changed to Tuesday 2021-03-16** (was 2022-03-15). The metro feed has *no* service
   on 2022-03-15, so the spec date would have produced a baseline with no metro. 2021-03-16 is inside
   both feeds' calendars; real feeds' dates are unchanged (CLAUDE.md §6, 07.5).
+- **Departure time changed to 10:00** (spec: 08:00). Every one of the TfC bus feed's 1,624
+  frequency rows runs 10:00–15:00 (its 26 scheduled trips start at 10:00), so at 08:00 *no* bus or
+  microbus ran and r5py routed the 08:00 baseline on metro + walking only: 5–10 km trips took a
+  median 130 min, Nasr City → Tahrir 90 min (fallback with buses: 55). The feed is a typical-day
+  pattern, not a timetable, so 10:00–11:00 is the only honest window; the metro runs then too.
+  08 now aborts if any feed runs fewer than `routing.min_service_share` (50 %) of its trips in the
+  departure window (`gtfs.trips_running`), so this cannot recur silently. The fallback was not
+  affected (it uses each route's frequency even outside its window); r5py was.
 - **Synthetic world** (`python -m khatt.synthetic`, `make synthetic`) writes every §5 file from
   invented numbers on real Cairo coordinates (marked by a `SYNTHETIC` file and `/health.synthetic`).
   Used by tests and for front-end work before real data exists. Never present it as Cairo.
@@ -135,10 +147,13 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   (10 min) and `eat` (20 min) are below the floor no β can beat — the spending-weighted time to the
   *nearest* street cluster (25.1 and 23.2 min: clusters need ≥ 15 shops, corner shops are not
   streets). Pinning β at the cap would send everyone to the single nearest cluster, so such targets
-  become floor × (1 + `spending.calibration_floor_margin`) = +10 %. Result: β daily 0.245, comp 0.165
-  (30 min target met exactly), eat 0.268 per minute — daily/eat still decay faster than comparison.
-  With β this steep, single streets can swing by +100–250 % when a line cuts 20+ min off their
-  access (e.g. El Tayaran St, Nasr City); totals stay moderate (|dR| ≈ 3.6 % of R0 for two lines).
+  become floor × (1 + `spending.calibration_floor_margin`) = +10 %. With the 10:00 T0 (floors 21.1
+  and 20.6 min): β daily 0.336, comp 0.183 (30 min target met exactly), eat 0.355 per minute.
+  Before the departure-time fix (no buses in T0) single streets swung by up to +400 % and the rent
+  index reached 109 % in a 4-line stress test, because hundreds of streets were reachable by few
+  residents and any line suddenly opened them up. Now: single realistic lines move streets by at
+  most 12–24 % (p90 |ΔR| ≤ 3.2 %) with rent index ≤ 21 %; the 4 × 10-station stress test peaks at
+  +67 % and 78 %. Lowering β does *not* shrink these (tested: flatter β makes swings larger).
 - **Governorates**: OSM boundaries via Nominatim if available, else an approximate Nile/latitude rule.
 - **Wealth**: Meta RWI → `exp(spending.rwi_scale × rwi)`, normalised to a population-weighted mean of 1;
   1.0 everywhere when absent.
@@ -161,6 +176,8 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
 - **08_baseline_matrix**: T0 built with r5py (72 unroutable cells from scipy fallback) from ['bus.zip', 'metro.zip'] _(2026-11-08 01:17)_
 - **08_baseline_matrix**: r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min _(2026-11-08 01:36)_
 - **08_baseline_matrix**: T0 built with r5py (32.8% pairs routed); scipy fallback for 63 unroutable cells and 156769 other pairs <= 120 min from ['bus.zip', 'metro.zip'] _(2026-11-08 01:36)_
+- **08_baseline_matrix**: r5py (36.5% pairs routed); scipy fallback for 10 unroutable cells and 119138 other pairs <= 120 min _(2026-11-08 04:03)_
+- **08_baseline_matrix**: T0 built with r5py (36.5% pairs routed); scipy fallback for 10 unroutable cells and 119138 other pairs <= 120 min from ['bus.zip', 'metro.zip'] _(2026-11-08 04:03)_
 
 ## Data storage
 
@@ -168,3 +185,6 @@ Running log of assumptions and choices (CLAUDE.md: "pick the simplest option tha
   overriding CLAUDE.md rule 10. This is acceptable because the repo is private (TfC CC BY-NC, OSM ODbL,
   WorldPop CC BY, Overture CDLA). The full `egypt-latest.osm.pbf` (177 MB) is left out: only the
   clipped `cairo.osm.pbf` is needed.
+- `data/processed/` is committed too (its parquet files through LFS), except the files
+  .gitignore still excludes: `T0*.npy`/`T0*.json` (55 MB each) and `walk_*` (28 MB). The API
+  needs `T0.npy` and the walk graph, so a fresh clone still has to run 06 and 08 for real data.
