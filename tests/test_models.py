@@ -80,6 +80,11 @@ def test_classify_thresholds():
     assert risk.tolist() == ["green", "green", "amber", "amber", "red"]
 
 
+def test_classify_ignores_float_noise():
+    risk = classify(np.array([-1e-12, -0.0004, -0.001]), 0.02, 0.0005)
+    assert risk.tolist() == ["green", "green", "amber"]
+
+
 def test_market_potential_rises_when_times_fall():
     S = np.ones((3, 3))
     T = np.full((3, 2), 30.0)
