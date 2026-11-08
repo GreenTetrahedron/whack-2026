@@ -107,24 +107,54 @@ def flow_matrix(world, res: SpendingResult) -> np.ndarray:
     return F
 
 
-def street_flows(world, F: np.ndarray, rows: np.ndarray, k: int,
-                 min_share: float = 0.0) -> dict[int, list[dict]]:
-    """For each street row in `rows`: its k largest |F| origins → {row: [{from, egp}]}, so the
-    map can show where one street's spending comes from or goes. Origins smaller than
+def net_inflow(world, res: SpendingResult, rows: np.ndarray) -> np.ndarray:
+    """Net EGP/yr each street moves *into* each street in `rows`: (n_streets, len(rows)), < 0 =
+    money moving out of rows[j] to that street.
+
+    An origin's spending only moves between streets (ΔP sums to 0 per origin and category), so
+    what origin o adds at street b it takes from the streets where it now spends less. Each gain
+    is split across those losses in proportion, per category, and summed:
+        moved[a → b] = Σ_c Σ_o S[o,c]·ΔP⁺[o,b,c] · ΔP⁻[o,a,c] / Σ_d ΔP⁻[o,d,c]
+    and net[a, j] = moved[a → rows[j]] − moved[rows[j] → a]. Summed over a, it is dR of rows[j].
+    """
+    rows = np.asarray(rows, np.int64)
+    net = np.zeros((res.dR.shape[0], len(rows)))
+    for c in range(len(CATEGORIES)):
+        F = world.spend[:, c : c + 1] * (res.scen.P[c].astype(np.float64) - res.base.P[c])
+        gain = np.maximum(F, 0.0)
+        loss = np.maximum(-F, 0.0)
+        total = loss.sum(axis=1, keepdims=True)
+        share = np.divide(loss, total, out=np.zeros_like(loss), where=total > 0)
+        net += share.T @ gain[:, rows] - gain.T @ share[:, rows]
+    return net
+
+
+def street_transfers(world, res: SpendingResult, rows: np.ndarray, k: int,
+                     min_share: float = 0.0) -> dict[int, list[dict]]:
+    """For each street row in `rows`: its k largest net money moves with other streets →
+    {row: [{from, to, street_id, egp}]}: `from` is the street that loses the spending, `to` the
+    one that gains it, `street_id` the other street, `egp` > 0 (EGP/yr). Moves smaller than
     `min_share` × that street's largest are dropped."""
     rows = np.asarray(rows, np.int64)
-    k = min(k, F.shape[0])
     if len(rows) == 0 or k <= 0:
         return {}
-    sub = np.abs(F[:, rows])
-    top = np.argpartition(-sub, k - 1, axis=0)[:k]  # (k, len(rows)), unsorted
+    net = net_inflow(world, res, rows)
+    st = world.streets
+    ids = st["street_id"].to_numpy()
+    lnglat = np.column_stack([st["lng"].to_numpy(), st["lat"].to_numpy()]).round(5).tolist()
     out: dict[int, list[dict]] = {}
     for j, row in enumerate(rows):
-        o = top[:, j]
-        o = o[np.argsort(-sub[o, j])]
-        o = o[(sub[o, j] > 0) & (sub[o, j] >= min_share * sub[o[0], j])]
-        out[int(row)] = [{"from": [round(float(world.lng[oi]), 5), round(float(world.lat[oi]), 5)],
-                          "egp": round(float(F[oi, row]))} for oi in o]
+        mag = np.abs(net[:, j])
+        top = np.argsort(-mag)[: min(k, len(mag))]
+        top = top[(mag[top] > 0) & (mag[top] >= min_share * mag[top[0]])]
+        here = lnglat[row]
+        out[int(row)] = [
+            {"from": lnglat[a] if net[a, j] > 0 else here,
+             "to": here if net[a, j] > 0 else lnglat[a],
+             "street_id": int(ids[a]),
+             "egp": round(float(mag[a]))}
+            for a in top
+        ]
     return out
 
 

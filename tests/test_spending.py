@@ -70,23 +70,46 @@ def test_closer_streets_gain(world, params, downtown_line):
     assert len(f["from"]) == 2 and 31 < f["from"][0] < 32, "flows are [lng, lat]"
 
 
-def test_street_flows_are_each_streets_largest(world, params, downtown_line):
-    from khatt.evaluate import build_scenario, destinations
-    from khatt.models.spending import flow_matrix, street_flows
+def _spending_result(world, params, line):
+    from khatt.evaluate import destinations
 
-    sc = build_scenario(world, [downtown_line], params)
+    sc = build_scenario(world, [line], params)
     dest, _ = destinations(world, sc, params)
     T0_d, T1_d = sc.overlay.to(dest)
     cols = np.searchsorted(dest, world.street_hex)
-    F = flow_matrix(world, run(world, params, T0_d[:, cols], T1_d[:, cols]))
-    rows = np.flatnonzero(np.abs(F).max(axis=0) > 0)[:10]
-    got = street_flows(world, F, rows, 5)
-    for row in rows:
-        flows = got[int(row)]
-        mags = [abs(f["egp"]) for f in flows]
-        assert 0 < len(flows) <= 5 and mags == sorted(mags, reverse=True)
-        assert mags[0] == pytest.approx(np.abs(F[:, row]).max(), abs=1)
-        assert all(np.sign(f["egp"]) in (-1, 0, 1) for f in flows)
+    return run(world, params, T0_d[:, cols], T1_d[:, cols])
+
+
+def test_street_to_street_moves_add_up_to_each_streets_change(world, params, downtown_line):
+    """Money moved in minus money moved out, over all other streets, is the street's own dR."""
+    from khatt.models.spending import net_inflow
+
+    res = _spending_result(world, params, downtown_line)
+    dR = res.dR.sum(axis=1)
+    rows = np.argsort(-np.abs(dR))[:10]
+    net = net_inflow(world, res, rows)
+    assert np.allclose(net.sum(axis=0), dR[rows], rtol=1e-6, atol=1.0)
+    assert np.allclose(net[rows, np.arange(len(rows))], 0.0), "a street moves nothing to itself"
+
+
+def test_street_transfers_run_from_loser_to_gainer(world, params, downtown_line):
+    from khatt.models.spending import net_inflow, street_transfers
+
+    res = _spending_result(world, params, downtown_line)
+    dR = res.dR.sum(axis=1)
+    rows = np.argsort(-np.abs(dR))[:10]
+    got = street_transfers(world, res, rows, 5)
+    net = net_inflow(world, res, rows)
+    st = world.streets
+    for j, row in enumerate(rows):
+        moves = got[int(row)]
+        here = [round(float(st["lng"].iat[row]), 5), round(float(st["lat"].iat[row]), 5)]
+        mags = [m["egp"] for m in moves]
+        assert 0 < len(moves) <= 5 and mags == sorted(mags, reverse=True) and min(mags) > 0
+        assert mags[0] == pytest.approx(np.abs(net[:, j]).max(), abs=1)
+        assert all((m["to"] == here) != (m["from"] == here) for m in moves), "one end is this street"
+        if dR[row] > 0:  # a gaining street's largest move brings money in
+            assert moves[0]["to"] == here
 
 
 def test_flows_drop_the_tiny_tail(world, params, downtown_line):
@@ -109,4 +132,5 @@ def test_evaluate_returns_street_flows(world, params, downtown_line):
     with_flows = [s for s in out["streets"] if s["flows"]]
     assert with_flows and all(len(s["flows"]) <= k for s in out["streets"])
     f = with_flows[0]["flows"][0]
-    assert len(f["from"]) == 2 and isinstance(f["egp"], int)
+    assert len(f["from"]) == 2 and len(f["to"]) == 2 and isinstance(f["egp"], int) and f["egp"] > 0
+    assert isinstance(f["street_id"], int)

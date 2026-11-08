@@ -57,7 +57,14 @@ type DrawnStation = {
 
 type ZoneRow = StationResult & { color: string };
 
-type FlowRow = { from: [number, number]; to: [number, number]; egp: number };
+// Overview: a residents' area → a street, egp signed (− = they spend less there). A clicked
+// street's moves (`between` set): from the street that loses the money to the one that gains it.
+type FlowRow = {
+  from: [number, number];
+  to: [number, number];
+  egp: number;
+  between?: { fromName: string; toName: string; into: boolean }; // into = points at the clicked street
+};
 
 /** Arrowhead pointing east, 20 × 20 units, anchored `gap` units past its tip so it stops short of
  * the street it points at. Drawn as a mask so the layer colours it. */
@@ -157,12 +164,28 @@ export default function MapView(props: Props) {
   useEffect(() => setSelected(null), [result]);
   const selectedStreet = after && selected !== null ? result!.streets.find((s) => s.street_id === selected) : undefined;
 
+  const streetName = useMemo(() => new Map(baseline?.streets.map((s) => [s.street_id, s.name]) ?? []), [baseline]);
+
   const flowRows: FlowRow[] = useMemo(() => {
     if (!result || !after) return [];
-    if (selectedStreet)
-      return (selectedStreet.flows ?? []).map((f) => ({ from: f.from, to: [selectedStreet.lng, selectedStreet.lat], egp: f.egp }));
+    if (selectedStreet) {
+      const here = selectedStreet;
+      const isHere = (p: [number, number]) => Math.abs(p[0] - here.lng) < 1e-4 && Math.abs(p[1] - here.lat) < 1e-4;
+      const other = (id: number) => streetName.get(id) ?? `Street ${id}`;
+      return (here.flows ?? [])
+        .filter((f) => f.to) // old scenario files stored residents' areas only
+        .map((f) => {
+          const into = isHere(f.to);
+          return {
+            from: f.from,
+            to: f.to,
+            egp: f.egp,
+            between: { into, fromName: into ? other(f.street_id) : here.name, toName: into ? here.name : other(f.street_id) },
+          };
+        });
+    }
     return toggles.flows && zoom <= FLOWS_MAX_ZOOM ? result.flows : [];
-  }, [result, after, selectedStreet, toggles.flows, zoom]);
+  }, [result, after, selectedStreet, toggles.flows, zoom, streetName]);
 
   const streets: StreetRow[] = useMemo(() => {
     if (!baseline) return [];
@@ -314,11 +337,8 @@ export default function MapView(props: Props) {
     );
     if (flowRows.length) {
       const maxFlow = Math.max(...flowRows.map((f) => Math.abs(f.egp)), 1);
-      const fromAlpha = selectedStreet ? 70 : 50;
-      const tint = (d: FlowRow, alpha: number): RGBA => {
-        const [r, g, b] = d.egp < 0 ? LOSS : GAIN;
-        return [r, g, b, alpha];
-      };
+      const rgba = (c: RGBA, alpha: number): RGBA => [c[0], c[1], c[2], alpha];
+      const tint = (d: FlowRow, alpha: number): RGBA => rgba(d.egp < 0 ? LOSS : GAIN, alpha);
       layers.push(
         new ArcLayer<FlowRow>({
           id: "flows",
@@ -327,27 +347,27 @@ export default function MapView(props: Props) {
           getTargetPosition: (d) => d.to,
           // flat on the map: raised arcs seen from straight above bend into loops like flight paths
           getHeight: 0,
-          // faint where the residents live, solid at the street the spending moves to or from
-          getSourceColor: (d) => tint(d, fromAlpha),
-          getTargetColor: (d) => tint(d, 230),
+          // a clicked street's moves: red at the street losing the money → blue at the one gaining it.
+          // Overview: faint where the residents live, solid at the street (blue gain, red loss).
+          getSourceColor: (d) => (d.between ? rgba(LOSS, 200) : tint(d, 50)),
+          getTargetColor: (d) => (d.between ? rgba(GAIN, 230) : tint(d, 230)),
           getWidth: (d) => 2 + (6 * Math.abs(d.egp)) / maxFlow,
           widthUnits: "pixels",
           pickable: true,
-          updateTriggers: { getSourceColor: fromAlpha },
         }),
-        // arrowheads show which way customers' spending moves: home → the street that gains it.
-        // Red lines get none: that money leaves the street for other shops, not for the home end.
+        // arrowheads point where the spending goes. A clicked street: every move, at the street that
+        // gains. Overview: gains only (residents → street); its red lines get none, since that money
+        // goes to other shops, not to the residents' end.
         new IconLayer<FlowRow>({
           id: "flow-arrows",
-          data: flowRows.filter((f) => f.egp > 0),
+          data: selectedStreet ? flowRows : flowRows.filter((f) => f.egp > 0),
           getPosition: (d) => d.to,
-          getIcon: () => (selectedStreet ? ARROW_RING : ARROW),
+          getIcon: (d) => (d.between?.into ? ARROW_RING : ARROW),
           getAngle: flowAngle,
           billboard: false, // lie on the map so the angle follows map north if the map is rotated
-          getSize: (d) => (selectedStreet ? ARROW_RING_PX : 12 + (8 * d.egp) / maxFlow),
+          getSize: (d) => (d.between?.into ? ARROW_RING_PX : 12 + (8 * Math.abs(d.egp)) / maxFlow),
           sizeUnits: "pixels",
-          getColor: (d) => tint(d, 240),
-          updateTriggers: { getIcon: !!selectedStreet, getSize: !!selectedStreet },
+          getColor: (d) => (d.between ? rgba(GAIN, 240) : tint(d, 240)),
         }),
       );
     }
@@ -400,12 +420,23 @@ export default function MapView(props: Props) {
   if (selectedStreet)
     hint = (
       <>
-        Where <b>{selectedStreet.name}</b>’s spending moves: <span style={{ color: "rgb(33,113,181)" }}>blue</span> = residents
-        there now spend more here, <span style={{ color: "rgb(214,64,69)" }}>red</span> = less. Click elsewhere to clear.
+        {selectedStreet.dR_egp >= 0 ? (
+          <>
+            Where <b>{selectedStreet.name}</b>’s extra spending comes from
+          </>
+        ) : (
+          <>
+            Where <b>{selectedStreet.name}</b>’s lost spending goes
+          </>
+        )}
+        : each arrow runs from the street that loses the money (<span style={{ color: "rgb(214,64,69)" }}>red</span> end) to
+        the one that gains it (<span style={{ color: "rgb(33,113,181)" }}>blue</span> end). Click elsewhere to clear.
       </>
     );
   else if (after && toggles.flows && zoom > FLOWS_MAX_ZOOM && !props.drawing)
     hint = <>Zoomed in: flows are hidden. Click a coloured street to see where its spending moves.</>;
+  else if (after && !toggles.flows && !props.drawing)
+    hint = <>Click a blue or red street to see where its spending moves.</>;
 
   return (
     <>
@@ -449,7 +480,9 @@ function tooltip(info: PickingInfo) {
           row("Rent index", pct(r.rent_pct)) +
           row("Risk", `<span style="color:${RISK_COLOR[r.risk]}">${r.risk}</span>`) +
           (r.local_loser ? `<div class="tt-note">Loses although a new station is close (two-way road)</div>` : "") +
-          (r.flows?.length ? `<div class="tt-note">Click to see where its spending moves</div>` : "");
+          (r.flows?.length
+            ? `<div class="tt-note">Click to see where its ${r.dR_egp >= 0 ? "extra spending comes from" : "lost spending goes"}</div>`
+            : "");
       }
       break;
     }
@@ -479,9 +512,12 @@ function tooltip(info: PickingInfo) {
       html = row("Station footfall / day", num(o.footfall_daily));
       break;
     case "flows":
-      html =
-        row(o.egp < 0 ? "Street loses from these residents" : "Street gains from these residents", egp(o.egp, true) + "/yr") +
-        `<div class="tt-note">${o.egp < 0 ? "They now shop elsewhere instead" : "They now shop here more"}</div>`;
+      html = o.between
+        ? `<div class="tt-title">${esc(o.between.fromName)} → ${esc(o.between.toName)}</div>` +
+          row("Spending moved", egp(o.egp) + "/yr") +
+          `<div class="tt-note">Shoppers now spend this at ${esc(o.between.toName)} instead of ${esc(o.between.fromName)}</div>`
+        : row(o.egp < 0 ? "Street loses from these residents" : "Street gains from these residents", egp(o.egp, true) + "/yr") +
+          `<div class="tt-note">${o.egp < 0 ? "They now shop elsewhere instead" : "They now shop here more"}</div>`;
       break;
     default:
       return null;

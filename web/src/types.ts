@@ -60,7 +60,9 @@ export type StreetResult = {
   risk_opening: Risk;
   local_loser: boolean;
   unbranded_at_risk: number;
-  flows?: { from: [number, number]; egp: number }[]; // this street's own largest shifts (missing in old scenario files)
+  // this street's largest money moves with other streets: from = the street that loses the spending,
+  // to = the one that gains it, street_id = the other street, egp > 0 (missing in old scenario files)
+  flows?: { from: [number, number]; to: [number, number]; street_id: number; egp: number }[];
 };
 
 export type StationResult = {

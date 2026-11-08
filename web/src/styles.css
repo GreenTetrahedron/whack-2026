@@ -274,37 +274,6 @@ input[type="number"],
   padding-left: 18px;
 }
 
-.timings .time-head {
-  margin-bottom: 6px;
-}
-.timings .ok {
-  color: var(--good);
-  font-weight: 600;
-}
-.timings .bad {
-  color: var(--bad);
-  font-weight: 600;
-}
-.stack {
-  display: flex;
-  height: 12px;
-  border-radius: 6px;
-  overflow: hidden;
-  background: #eee;
-}
-.steps {
-  list-style: none;
-  padding: 0;
-  margin: 10px 0 0;
-}
-.steps li {
-  display: flex;
-  gap: 8px;
-  margin: 6px 0;
-}
-.steps .dot {
-  margin-top: 4px;
-}
 .dot {
   display: inline-block;
   width: 10px;
