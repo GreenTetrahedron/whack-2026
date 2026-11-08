@@ -107,9 +107,11 @@ def flow_matrix(world, res: SpendingResult) -> np.ndarray:
     return F
 
 
-def street_flows(world, F: np.ndarray, rows: np.ndarray, k: int) -> dict[int, list[dict]]:
+def street_flows(world, F: np.ndarray, rows: np.ndarray, k: int,
+                 min_share: float = 0.0) -> dict[int, list[dict]]:
     """For each street row in `rows`: its k largest |F| origins → {row: [{from, egp}]}, so the
-    map can show where one street's spending comes from or goes."""
+    map can show where one street's spending comes from or goes. Origins smaller than
+    `min_share` × that street's largest are dropped."""
     rows = np.asarray(rows, np.int64)
     k = min(k, F.shape[0])
     if len(rows) == 0 or k <= 0:
@@ -120,14 +122,17 @@ def street_flows(world, F: np.ndarray, rows: np.ndarray, k: int) -> dict[int, li
     for j, row in enumerate(rows):
         o = top[:, j]
         o = o[np.argsort(-sub[o, j])]
-        o = o[sub[o, j] > 0]
+        o = o[(sub[o, j] > 0) & (sub[o, j] >= min_share * sub[o[0], j])]
         out[int(row)] = [{"from": [round(float(world.lng[oi]), 5), round(float(world.lat[oi]), 5)],
                           "egp": round(float(F[oi, row]))} for oi in o]
     return out
 
 
-def top_flows(world, res: SpendingResult, n: int, F: np.ndarray | None = None) -> list[dict]:
-    """Largest |Σ_c S[o, c] · ΔP[o, d, c]| origin → street shifts (EGP/yr, signed)."""
+def top_flows(world, res: SpendingResult, n: int, F: np.ndarray | None = None,
+              min_share: float = 0.0) -> list[dict]:
+    """Largest |Σ_c S[o, c] · ΔP[o, d, c]| origin → street shifts (EGP/yr, signed): at most n,
+    and none smaller than `min_share` × the largest (a long tail of tiny shifts draws as a
+    tangle of hairlines on the map)."""
     if F is None:
         F = flow_matrix(world, res)
     flat = np.abs(F).ravel()
@@ -136,6 +141,7 @@ def top_flows(world, res: SpendingResult, n: int, F: np.ndarray | None = None) -
         return []
     top = np.argpartition(flat, -n)[-n:]
     top = top[np.argsort(-flat[top])]
+    top = top[flat[top] >= min_share * flat[top[0]]]
     o, d = np.unravel_index(top, F.shape)
     st = world.streets
     return [

@@ -50,7 +50,8 @@ spending:
   price_factor_to_2021: {low: 1.04, central: 1.06, high: 1.08, source: "CAPMAS urban CPI y/y ≈ 4.3–6.6 % in 2020–21 (≈5 % avg 2020); ~15 months from HIECS 2019/20 prices to mid-2021"}
   rwi_scale: {low: 0.3, central: 0.5, high: 0.8, source: "assumption: wealth factor = exp(scale × Meta RWI)"}
   local_radius_m: 1500
-  n_flows: 50                      # top origin→street shifts returned for the ArcLayer
+  n_flows: 20                      # top origin→street shifts returned for the ArcLayer (at most)
+  flow_min_share: 0.1              # ...and none smaller than this share of the largest (also per clicked street)
   n_street_flows: 8                # per reported street: its own top shifts, shown when clicked
 
 streets:
