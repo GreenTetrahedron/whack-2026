@@ -22,9 +22,11 @@ from khatt.config import CATEGORIES, Params, processed_dir, scenarios_dir
 from khatt.data import DataMissing, load_world
 from khatt.engine.overlay import warmup
 from khatt.evaluate import evaluate as run_evaluate
+from khatt.models.zones import warmup as zones_warmup
 
 log = logging.getLogger("khatt.api")
-SLIDERS = [f"spending.beta.{c}" for c in CATEGORIES] + ["rents.elasticity", "spending.induced_pct"]
+SLIDERS = [f"spending.beta.{c}" for c in CATEGORIES] + [
+    "rents.elasticity", "spending.induced_pct", "zones.threshold", "zones.work_trip_share"]
 SCENARIO_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 SIMPLIFY_DEG = 0.0003  # ≈ 30 m, for microbus geometries in /baseline
 
@@ -45,7 +47,9 @@ def load_state() -> None:
     try:
         STATE.world = load_world(processed_dir())
         STATE.error = None
+        STATE.world.r9_xy()  # used by the zones model; compute before the first request
         warmup()
+        zones_warmup()
     except (DataMissing, ValueError, OSError) as exc:
         STATE.world = None
         STATE.error = str(exc)

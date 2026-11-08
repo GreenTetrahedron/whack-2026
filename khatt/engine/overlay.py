@@ -81,6 +81,8 @@ class Overlay:
         self.T0 = T0
         self.station_hex = np.asarray(station_hex, np.int64)
         self.S = len(self.station_hex)
+        self.wait_board = np.asarray(wait_board, np.float32)  # kept for the zones model
+        self.Rstar = np.asarray(Rstar, np.float32)
         if self.S:
             self.via = compute_via(
                 np.ascontiguousarray(T0[:, self.station_hex], np.float32),

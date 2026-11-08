@@ -77,6 +77,21 @@ footfall:
   basket_egp: {low: 15, central: 30, high: 50, source: "assumption, 2021 EGP"}
   days_per_year: 365
 
+# Area of effect per new station (khatt/models/zones.py): the circle inside which residents have,
+# on average, at least `threshold` chance that a typical trip boards the line at that station.
+zones:
+  work_trip_share: {low: 0.3, central: 0.5, high: 0.7, source: "assumption; rest are shopping trips"}
+  # Work-trip distance decay per minute. Replaced by the calibrated value (make calibrate).
+  beta_work: {low: 0.02, central: 0.04, high: 0.06, source: "assumption until calibrated"}
+  target_mean_work_trip_min: 40     # assumption; Hyman's method fits beta_work to it
+  min_saving_min: {low: 0, central: 2, high: 5, source: "assumption; below this a trip never switches"}
+  full_saving_min: {low: 5, central: 10, high: 20, source: "assumption; at this saving every trip switches"}
+  threshold: {low: 0.1, central: 0.2, high: 0.3, source: "display choice: mean chance inside the circle (DECISIONS.md)"}
+  edge_share: 0.5                   # the band at the circle's edge must average >= this × threshold
+  edge_band_m: 500
+  walk_max_min: 20                  # walk-graph access to a station is computed up to this
+  max_radius_m: 5000
+
 rents:
   radius_m: 1500
   elasticity: {low: 0.1, central: 0.3, high: 0.6, source: "placeholder; replace with published capitalisation estimates"}

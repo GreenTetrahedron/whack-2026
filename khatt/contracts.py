@@ -13,7 +13,7 @@ CONTRACTS: dict[str, dict[str, str]] = {
     "hexes_r8.parquet": {
         "h3": STR, "idx": "int32", "lat": "float64", "lng": "float64", "governorate": STR,
         "pop": "float32", "wealth": "float32", "spend_daily": "float32", "spend_comp": "float32",
-        "spend_eat": "float32",
+        "spend_eat": "float32", "n_places": "int32",
     },
     "streets.parquet": {
         "street_id": "int32", "name": STR, "lat": "float64", "lng": "float64", "h3_r8": STR,

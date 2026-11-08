@@ -73,6 +73,8 @@ def make_synthetic_world(out_dir: Path | str, *, rings: int = 10, seed: int = 0,
         "h3": cells, "idx": np.arange(N, dtype=np.int32), "lat": lat, "lng": lng,
         "governorate": gov, "pop": pop.astype(np.float32), "wealth": wealth,
         "spend_daily": spend["daily"], "spend_comp": spend["comp"], "spend_eat": spend["eat"],
+        # deterministic (no rng draw) so the rest of the synthetic world is unchanged
+        "n_places": np.round(300 * np.exp(-r_km / 3) + pop / 2000).astype(np.int32),
     })
 
     # ---------- existing metro lines ----------

@@ -48,6 +48,7 @@ class World:
     hex_y: np.ndarray = field(init=False)
     pop: np.ndarray = field(init=False)
     spend: np.ndarray = field(init=False)  # (N, 3) EGP/yr
+    places: np.ndarray = field(init=False)  # (N,) mapped places, jobs stand-in (zones model)
     street_hex: np.ndarray = field(init=False)
     street_A: np.ndarray = field(init=False)  # (n_streets, 3)
     street_x: np.ndarray = field(init=False)
@@ -66,6 +67,9 @@ class World:
         self.hex_x, self.hex_y = (np.asarray(a) for a in to_utm(self.lat, self.lng))
         self.pop = h["pop"].to_numpy(np.float64)
         self.spend = np.column_stack([h[f"spend_{c}"].to_numpy(np.float64) for c in CATEGORIES])
+        # older processed data has no n_places: zones then use shopping trips only
+        self.places = (h["n_places"].to_numpy(np.float64) if "n_places" in h
+                       else np.zeros(len(h)))
         self.hex_tree = cKDTree(np.column_stack([self.hex_x, self.hex_y]))
 
         s = self.streets
@@ -86,6 +90,18 @@ class World:
     @property
     def n(self) -> int:
         return len(self.hex_ids)
+
+    def r9_xy(self) -> tuple[np.ndarray, np.ndarray]:
+        """UTM 36N centres of the r9 cells (computed on first use, then cached)."""
+        cached = self.__dict__.get("_r9_xy_cache")
+        if cached is None:
+            import h3
+
+            ll = np.array([h3.cell_to_latlng(c) for c in self.r9["h3"]], float).reshape(-1, 2)
+            x, y = to_utm(ll[:, 0], ll[:, 1])
+            cached = (np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(y, float)))
+            self.__dict__["_r9_xy_cache"] = cached
+        return cached
 
     def microbus_pairs(self, max_gap: int):
         """(route_row, a_hex, b_hex) for stop-hex pairs a before b, ≤ max_gap stops apart.

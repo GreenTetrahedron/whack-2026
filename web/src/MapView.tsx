@@ -5,7 +5,7 @@ import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Layer, PickingInfo } from "@deck.gl/core";
 import { ArcLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
-import type { Baseline, DraftLine, EvalResult, StreetResult } from "./types";
+import type { Baseline, DraftLine, EvalResult, StationResult, StreetResult } from "./types";
 import { divergingColor, egp, GAIN, hexToRgb, LOSS, num, pct, RISK_COLOR, sequentialColor } from "./format";
 
 const BASEMAP = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
@@ -17,6 +17,7 @@ export type LayerToggles = {
   footfall: boolean;
   microbus: boolean;
   allMicrobus: boolean;
+  zones: boolean;
 };
 
 type Props = {
@@ -40,7 +41,18 @@ type StreetRow = {
   res?: StreetResult;
 };
 
-type DrawnStation = { lineId: string; idx: number; lat: number; lng: number; color: string; riders?: number; active: boolean };
+type DrawnStation = {
+  lineId: string;
+  idx: number;
+  lat: number;
+  lng: number;
+  color: string;
+  riders?: number;
+  zone?: StationResult;
+  active: boolean;
+};
+
+type ZoneRow = StationResult & { color: string };
 
 function streetRadius(R0: number): number {
   return 35 + 5 * Math.sqrt(Math.max(R0, 0) / 1e6); // metres
@@ -105,7 +117,7 @@ export default function MapView(props: Props) {
   }, [baseline, result]);
 
   const drawnStations: DrawnStation[] = useMemo(() => {
-    const riders = new Map(result?.stations.map((s) => [`${s.line_id}:${s.idx}`, s.riders_daily]) ?? []);
+    const byKey = new Map(result?.stations.map((s) => [`${s.line_id}:${s.idx}`, s]) ?? []);
     return lines
       .filter((l) => l.visible)
       .flatMap((l) =>
@@ -115,11 +127,21 @@ export default function MapView(props: Props) {
           lat: s.lat,
           lng: s.lng,
           color: l.color,
-          riders: riders.get(`${l.id}:${idx}`),
+          riders: byKey.get(`${l.id}:${idx}`)?.riders_daily,
+          zone: byKey.get(`${l.id}:${idx}`),
           active: l.id === activeId,
         })),
       );
   }, [lines, result, activeId]);
+
+  const zones: ZoneRow[] = useMemo(() => {
+    if (!result) return [];
+    const color = new Map(lines.filter((l) => l.visible).map((l) => [l.id, l.color]));
+    return result.stations
+      .filter((s) => s.zone_radius_m > 0 && color.has(s.line_id))
+      .map((s) => ({ ...s, color: color.get(s.line_id)! }))
+      .sort((a, b) => b.zone_radius_m - a.zone_radius_m); // small circles on top
+  }, [result, lines]);
 
   const microbusHit = useMemo(() => {
     if (!baseline || !result) return null;
@@ -200,6 +222,20 @@ export default function MapView(props: Props) {
             extruded: false,
             pickable: true,
           }),
+        toggles.zones &&
+          new ScatterplotLayer<ZoneRow>({
+            id: "station-zones",
+            data: zones,
+            getPosition: (d) => [d.lng, d.lat],
+            getRadius: (d) => d.zone_radius_m,
+            radiusUnits: "meters",
+            getFillColor: (d) => hexToRgb(d.color, 38),
+            stroked: true,
+            getLineColor: (d) => hexToRgb(d.color, 200),
+            getLineWidth: 1.5,
+            lineWidthUnits: "pixels",
+            pickable: true,
+          }),
       );
     }
     layers.push(
@@ -263,7 +299,7 @@ export default function MapView(props: Props) {
       }),
     );
     overlay.setProps({ layers: layers.filter(Boolean) as Layer[], getTooltip: tooltip });
-  }, [baseline, result, after, toggles, streets, lines, drawnStations, activeId, microbusHit]);
+  }, [baseline, result, after, toggles, streets, lines, drawnStations, activeId, microbusHit, zones]);
 
   return <div ref={container} className="map" />;
 }
@@ -274,6 +310,17 @@ function row(label: string, value: string) {
 
 function esc(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+function zoneRows(z: StationResult) {
+  if (z.zone_radius_m <= 0)
+    return row("Likely users", num(z.zone_users)) + `<div class="tt-note">No area of effect: nobody nearby is likely enough to use it</div>`;
+  return (
+    row("Area of effect", `${(z.zone_radius_m / 1000).toFixed(1)} km radius`) +
+    row("Avg chance inside", `${Math.round(100 * z.zone_mean_p)}% of trips`) +
+    row("Residents inside", num(z.zone_pop)) +
+    row("Likely users", num(z.zone_users))
+  );
 }
 
 function tooltip(info: PickingInfo) {
@@ -298,7 +345,11 @@ function tooltip(info: PickingInfo) {
       html =
         `<div class="tt-title">Line ${esc(o.lineId)} · station ${o.idx + 1}</div>` +
         (o.riders ? row("Riders / day", num(o.riders)) : "") +
+        (o.zone ? zoneRows(o.zone) : "") +
         `<div class="tt-note">Right-click to delete</div>`;
+      break;
+    case "station-zones":
+      html = `<div class="tt-title">Line ${esc(o.line_id)} · station ${o.idx + 1} · area of effect</div>` + zoneRows(o as StationResult);
       break;
     case "existing-stations":
       html = `<div class="tt-title">${esc(o.name)}</div>` + row("Line", esc(o.line)) + row("Residents ≤ 10 min walk", num(o.catchment_pop10));

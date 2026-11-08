@@ -73,6 +73,10 @@ export type StationResult = {
   usefulness: number;
   vendor_pitches: number;
   snap_m: number;
+  zone_radius_m: number; // area of effect: 0 = no zone
+  zone_users: number; // residents × chance a typical trip boards here
+  zone_pop: number; // residents inside the circle
+  zone_mean_p: number; // mean chance inside the circle
 };
 
 export type EvalResult = {
@@ -97,6 +101,8 @@ export type EvalResult = {
     vendor_pitches: number;
     vendor_pitches_lost: number;
     microbus: { competing: number; feeder: number; unaffected: number };
+    zone_users: number;
+    zone_threshold: number;
   };
   streets: StreetResult[];
   stations: StationResult[];

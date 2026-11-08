@@ -63,6 +63,7 @@ export default function Results(props: {
             <Check on={toggles.footfall} onClick={() => toggle("footfall")} label="Footfall" />
             <Check on={toggles.microbus} onClick={() => toggle("microbus")} label="Microbus" />
             <Check on={toggles.allMicrobus} onClick={() => toggle("allMicrobus")} label="All routes" />
+            <Check on={toggles.zones} onClick={() => toggle("zones")} label="Zones" />
           </div>
         </div>
         <div className="tabs">
@@ -118,6 +119,12 @@ export default function Results(props: {
               Riders = residents within a 10-minute walk × Cairo’s riders-per-resident × how useful the line is to them.
               People walking to and from stations buy things on streets they pass.
             </p>
+            <p className="explain">
+              Area of effect: the circle where residents’ trips (to work and to shops) would, on average, use this
+              station at least {Math.round(100 * result.totals.zone_threshold)}% of the time,
+              because it beats today’s walk, microbus and metro by enough. Likely users counts everyone nearby,
+              weighted by that chance.
+            </p>
             <table>
               <thead>
                 <tr>
@@ -125,6 +132,9 @@ export default function Results(props: {
                   <th className="r">Riders/day</th>
                   <th className="r">Residents ≤10 min</th>
                   <th className="r">Usefulness</th>
+                  <th className="r">Zone radius</th>
+                  <th className="r">Avg chance</th>
+                  <th className="r">Likely users</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,6 +147,9 @@ export default function Results(props: {
                     <td className="r">{num(s.riders_daily)}</td>
                     <td className="r">{num(s.catchment_pop10)}</td>
                     <td className="r">{s.usefulness.toFixed(2)}</td>
+                    <td className="r">{s.zone_radius_m > 0 ? `${(s.zone_radius_m / 1000).toFixed(1)} km` : "–"}</td>
+                    <td className="r">{s.zone_radius_m > 0 ? `${Math.round(100 * s.zone_mean_p)}%` : "–"}</td>
+                    <td className="r">{num(s.zone_users)}</td>
                   </tr>
                 ))}
               </tbody>
