@@ -60,6 +60,7 @@ export type StreetResult = {
   risk_opening: Risk;
   local_loser: boolean;
   unbranded_at_risk: number;
+  flows?: { from: [number, number]; egp: number }[]; // this street's own largest shifts (missing in old scenario files)
 };
 
 export type StationResult = {

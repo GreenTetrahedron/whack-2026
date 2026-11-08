@@ -117,6 +117,7 @@ def make_synthetic_world(out_dir: Path | str, *, rings: int = 10, seed: int = 0,
         mb_rows.append({
             "route_id": rid, "agency": "Microbus", "headway_min": headway,
             "stop_hex_idx": np.array(idx, np.int32),
+            "stop_lat": lat[idx].astype(np.float64), "stop_lng": lng[idx].astype(np.float64),
             "geometry": LineString([(lng[k], lat[k]) for k in idx]),
         })
         mb_routes.append(Route(rid, "microbus", headway, list(lat[idx]), list(lng[idx]),

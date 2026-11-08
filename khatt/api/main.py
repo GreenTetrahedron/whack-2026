@@ -15,6 +15,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from khatt.api.schemas import EvaluateRequest, Health, ParamRange
@@ -28,7 +29,8 @@ log = logging.getLogger("khatt.api")
 SLIDERS = [f"spending.beta.{c}" for c in CATEGORIES] + [
     "rents.elasticity", "spending.induced_pct", "zones.threshold", "zones.work_trip_share"]
 SCENARIO_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-SIMPLIFY_DEG = 0.0003  # ≈ 30 m, for microbus geometries in /baseline
+SIMPLIFY_DEG = 0.0001  # ≈ 10 m, for microbus road traces in /baseline (≈ 0.5 MB once per page)
+COORD_DECIMALS = 5  # ≈ 1 m
 
 
 class State:
@@ -39,6 +41,15 @@ class State:
 
 
 STATE = State()
+
+
+def _line_json(geom) -> dict:
+    """GeoJSON geometry with coordinates rounded to ~1 m (keeps /baseline small)."""
+    if geom.geom_type == "LineString":
+        return {"type": "LineString",
+                "coordinates": [[round(x, COORD_DECIMALS), round(y, COORD_DECIMALS)]
+                                 for x, y in geom.coords]}
+    return json.loads(json.dumps(geom.__geo_interface__))
 
 
 def load_state() -> None:
@@ -67,6 +78,7 @@ origins = [o.strip() for o in os.environ.get(
     "KHATT_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"],
                    allow_headers=["*"])
+app.add_middleware(GZipMiddleware, minimum_size=2048)  # /baseline and /evaluate are JSON-heavy
 
 
 def _finite(obj):
@@ -133,7 +145,7 @@ def build_baseline(w, params: Params) -> dict:
         "type": "Feature",
         "properties": {"route_id": str(r.route_id), "agency": str(r.agency),
                        "headway_min": float(r.headway_min)},
-        "geometry": json.loads(json.dumps(r.geometry.simplify(SIMPLIFY_DEG).__geo_interface__)),
+        "geometry": _line_json(r.geometry.simplify(SIMPLIFY_DEG)),
     } for r in mb.itertuples() if r.geometry is not None]}
     return {
         "streets": streets,

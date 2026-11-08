@@ -27,6 +27,7 @@ CONTRACTS: dict[str, dict[str, str]] = {
     },
     "microbus_routes.parquet": {
         "route_id": STR, "agency": STR, "headway_min": "float64", "stop_hex_idx": "list",
+        "stop_lat": "list", "stop_lng": "list",
     },
     "r9_near.parquet": {"h3": STR, "pop": "float32", "parent_r8_idx": "int32"},
     "walk_nodes_r9.parquet": {"node_id": "int", "h3_r9": STR},

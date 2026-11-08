@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
@@ -6,10 +6,13 @@ import type { Layer, PickingInfo } from "@deck.gl/core";
 import { ArcLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
 import type { Baseline, DraftLine, EvalResult, StationResult, StreetResult } from "./types";
-import { divergingColor, egp, GAIN, hexToRgb, LOSS, num, pct, RISK_COLOR, sequentialColor } from "./format";
+import { divergingColor, egp, GAIN, hexToRgb, LOSS, num, pct, RISK_COLOR, type RGBA, sequentialColor } from "./format";
 
 const BASEMAP = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const CAIRO = { lat: 30.04, lng: 31.24, zoom: 10.5 };
+// Flows link a neighbourhood to a street; they are not routes. Past this zoom they read like roads
+// cutting through blocks, so the overview flows hide (a clicked street still shows its own).
+const FLOWS_MAX_ZOOM = 13;
 
 export type LayerToggles = {
   flows: boolean;
@@ -54,6 +57,8 @@ type DrawnStation = {
 
 type ZoneRow = StationResult & { color: string };
 
+type FlowRow = { from: [number, number]; to: [number, number]; egp: number };
+
 function streetRadius(R0: number): number {
   return 35 + 5 * Math.sqrt(Math.max(R0, 0) / 1e6); // metres
 }
@@ -65,6 +70,8 @@ export default function MapView(props: Props) {
   // handlers read through a ref so the map listeners never go stale
   const live = useRef(props);
   live.current = props;
+  const [zoom, setZoom] = useState(CAIRO.zoom);
+  const [selected, setSelected] = useState<number | null>(null); // street_id whose flows are shown
 
   useEffect(() => {
     if (!container.current) return;
@@ -79,9 +86,17 @@ export default function MapView(props: Props) {
     const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
     map.addControl(overlay);
     map.on("click", (e) => {
-      if (!live.current.drawing) return;
-      live.current.onAddStation(e.lngLat.lat, e.lngLat.lng);
+      if (live.current.drawing) {
+        live.current.onAddStation(e.lngLat.lat, e.lngLat.lng);
+        return;
+      }
+      // not drawing: clicking a changed street shows where its spending moves; elsewhere clears
+      const info = overlay.pickObject({ x: e.point.x, y: e.point.y, radius: 4, layerIds: ["streets"] });
+      const st = info?.object as StreetRow | undefined;
+      setSelected(st?.res?.flows?.length ? st.street_id : null);
     });
+    map.on("zoomend", () => setZoom(map.getZoom()));
+    setZoom(map.getZoom()); // a re-created map (e.g. hot reload) starts at the default zoom
     map.on("contextmenu", (e) => {
       const info = overlay.pickObject({ x: e.point.x, y: e.point.y, radius: 6, layerIds: ["drawn-stations"] });
       const st = info?.object as DrawnStation | undefined;
@@ -107,6 +122,16 @@ export default function MapView(props: Props) {
 
   const { baseline, result, lines, activeId, view, toggles } = props;
   const after = view === "after" && result !== null;
+
+  useEffect(() => setSelected(null), [result]);
+  const selectedStreet = after && selected !== null ? result!.streets.find((s) => s.street_id === selected) : undefined;
+
+  const flowRows: FlowRow[] = useMemo(() => {
+    if (!result || !after) return [];
+    if (selectedStreet)
+      return (selectedStreet.flows ?? []).map((f) => ({ from: f.from, to: [selectedStreet.lng, selectedStreet.lat], egp: f.egp }));
+    return toggles.flows && zoom <= FLOWS_MAX_ZOOM ? result.flows : [];
+  }, [result, after, selectedStreet, toggles.flows, zoom]);
 
   const streets: StreetRow[] = useMemo(() => {
     if (!baseline) return [];
@@ -256,19 +281,44 @@ export default function MapView(props: Props) {
         updateTriggers: { getFillColor: [after, result], getLineColor: [after, result], getLineWidth: [after, result] },
       }),
     );
-    if (result && after && toggles.flows) {
-      const maxFlow = Math.max(...result.flows.map((f) => Math.abs(f.egp)), 1);
+    if (flowRows.length) {
+      const maxFlow = Math.max(...flowRows.map((f) => Math.abs(f.egp)), 1);
+      const fromAlpha = selectedStreet ? 70 : 25;
+      const tint = (d: FlowRow, alpha: number): RGBA => {
+        const [r, g, b] = d.egp < 0 ? LOSS : GAIN;
+        return [r, g, b, alpha];
+      };
       layers.push(
-        new ArcLayer({
+        new ArcLayer<FlowRow>({
           id: "flows",
-          data: result.flows,
+          data: flowRows,
           getSourcePosition: (d) => d.from,
           getTargetPosition: (d) => d.to,
-          getSourceColor: (d) => (d.egp < 0 ? LOSS : GAIN),
-          getTargetColor: (d) => (d.egp < 0 ? LOSS : GAIN),
-          getWidth: (d) => 1 + (6 * Math.abs(d.egp)) / maxFlow,
+          // flat on the map: raised arcs seen from straight above bend into loops like flight paths
+          getHeight: 0,
+          // faint where the residents live, solid at the street the spending moves to or from
+          getSourceColor: (d) => tint(d, fromAlpha),
+          getTargetColor: (d) => tint(d, 230),
+          getWidth: (d) => 1 + (4 * Math.abs(d.egp)) / maxFlow,
           widthUnits: "pixels",
           pickable: true,
+          updateTriggers: { getSourceColor: fromAlpha },
+        }),
+      );
+    }
+    if (selectedStreet) {
+      layers.push(
+        new ScatterplotLayer<StreetResult>({
+          id: "selected-street",
+          data: [selectedStreet],
+          getPosition: (d) => [d.lng, d.lat],
+          getRadius: 13,
+          radiusUnits: "pixels",
+          filled: false,
+          stroked: true,
+          getLineColor: [30, 30, 30, 230],
+          getLineWidth: 2.5,
+          lineWidthUnits: "pixels",
         }),
       );
     }
@@ -299,9 +349,25 @@ export default function MapView(props: Props) {
       }),
     );
     overlay.setProps({ layers: layers.filter(Boolean) as Layer[], getTooltip: tooltip });
-  }, [baseline, result, after, toggles, streets, lines, drawnStations, activeId, microbusHit, zones]);
+  }, [baseline, result, after, toggles, streets, lines, drawnStations, activeId, microbusHit, zones, flowRows, selectedStreet]);
 
-  return <div ref={container} className="map" />;
+  let hint: JSX.Element | null = null;
+  if (selectedStreet)
+    hint = (
+      <>
+        Where <b>{selectedStreet.name}</b>’s spending moves: <span style={{ color: "rgb(33,113,181)" }}>blue</span> = residents
+        there now spend more here, <span style={{ color: "rgb(214,64,69)" }}>red</span> = less. Click elsewhere to clear.
+      </>
+    );
+  else if (after && toggles.flows && zoom > FLOWS_MAX_ZOOM && !props.drawing)
+    hint = <>Zoomed in: flows are hidden. Click a coloured street to see where its spending moves.</>;
+
+  return (
+    <>
+      <div ref={container} className="map" />
+      {hint && <div className="map-hint">{hint}</div>}
+    </>
+  );
 }
 
 function row(label: string, value: string) {
@@ -337,7 +403,8 @@ function tooltip(info: PickingInfo) {
           (r.passby_egp ? row("Pass-by from stations", egp(r.passby_egp, true)) : "") +
           row("Rent index", pct(r.rent_pct)) +
           row("Risk", `<span style="color:${RISK_COLOR[r.risk]}">${r.risk}</span>`) +
-          (r.local_loser ? `<div class="tt-note">Loses although a new station is close (two-way road)</div>` : "");
+          (r.local_loser ? `<div class="tt-note">Loses although a new station is close (two-way road)</div>` : "") +
+          (r.flows?.length ? `<div class="tt-note">Click to see where its spending moves</div>` : "");
       }
       break;
     }
@@ -367,7 +434,9 @@ function tooltip(info: PickingInfo) {
       html = row("Station footfall / day", num(o.footfall_daily));
       break;
     case "flows":
-      html = row(o.egp < 0 ? "Spending lost to this street" : "Spending gained by this street", egp(o.egp, true) + "/yr");
+      html =
+        row(o.egp < 0 ? "Street loses from these residents" : "Street gains from these residents", egp(o.egp, true) + "/yr") +
+        `<div class="tt-note">${o.egp < 0 ? "They now shop elsewhere instead" : "They now shop here more"}</div>`;
       break;
     default:
       return null;

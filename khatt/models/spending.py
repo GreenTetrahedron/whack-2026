@@ -98,11 +98,38 @@ def run(world, params: Params, T0_streets: np.ndarray, T1_streets: np.ndarray,
     return SpendingResult(base, scen, scen.R - base.R, d_reach, use_share)
 
 
-def top_flows(world, res: SpendingResult, n: int) -> list[dict]:
-    """Largest |Σ_c S[o, c] · ΔP[o, d, c]| origin → street shifts (EGP/yr, signed)."""
+def flow_matrix(world, res: SpendingResult) -> np.ndarray:
+    """F[o, d] = Σ_c S[o, c] · ΔP[o, d, c]: EGP/yr that origin o moves to (+) or away from (−)
+    street d."""
     F = np.zeros(res.scen.P[0].shape, np.float64)
     for c in range(len(CATEGORIES)):
         F += world.spend[:, c : c + 1] * (res.scen.P[c].astype(np.float64) - res.base.P[c])
+    return F
+
+
+def street_flows(world, F: np.ndarray, rows: np.ndarray, k: int) -> dict[int, list[dict]]:
+    """For each street row in `rows`: its k largest |F| origins → {row: [{from, egp}]}, so the
+    map can show where one street's spending comes from or goes."""
+    rows = np.asarray(rows, np.int64)
+    k = min(k, F.shape[0])
+    if len(rows) == 0 or k <= 0:
+        return {}
+    sub = np.abs(F[:, rows])
+    top = np.argpartition(-sub, k - 1, axis=0)[:k]  # (k, len(rows)), unsorted
+    out: dict[int, list[dict]] = {}
+    for j, row in enumerate(rows):
+        o = top[:, j]
+        o = o[np.argsort(-sub[o, j])]
+        o = o[sub[o, j] > 0]
+        out[int(row)] = [{"from": [round(float(world.lng[oi]), 5), round(float(world.lat[oi]), 5)],
+                          "egp": round(float(F[oi, row]))} for oi in o]
+    return out
+
+
+def top_flows(world, res: SpendingResult, n: int, F: np.ndarray | None = None) -> list[dict]:
+    """Largest |Σ_c S[o, c] · ΔP[o, d, c]| origin → street shifts (EGP/yr, signed)."""
+    if F is None:
+        F = flow_matrix(world, res)
     flat = np.abs(F).ravel()
     n = min(n, int((flat > 0).sum()))
     if n == 0:
