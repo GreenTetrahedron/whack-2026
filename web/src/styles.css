@@ -43,6 +43,9 @@ main {
 .map {
   position: absolute;
   inset: 0;
+  /* own stacking context: MapLibre puts the deck.gl canvas in a z-index 2 control container,
+     which would otherwise draw the map's lines over the legend and hints */
+  z-index: 0;
 }
 
 h1 {
@@ -428,9 +431,16 @@ td.name {
   flex-direction: column;
   gap: 3px;
 }
+/* icon slot of fixed width so every label starts at the same place */
+.legend > div {
+  display: grid;
+  grid-template-columns: 16px auto;
+  align-items: center;
+  column-gap: 6px;
+}
 .legend .dot,
 .legend .bar {
-  margin-right: 6px;
+  justify-self: center;
 }
 .map-hint {
   position: absolute;
