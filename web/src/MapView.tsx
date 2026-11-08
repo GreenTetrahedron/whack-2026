@@ -1,0 +1,329 @@
+import { useEffect, useMemo, useRef } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { MapboxOverlay } from "@deck.gl/mapbox";
+import type { Layer, PickingInfo } from "@deck.gl/core";
+import { ArcLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { H3HexagonLayer } from "@deck.gl/geo-layers";
+import type { Baseline, DraftLine, EvalResult, StreetResult } from "./types";
+import { divergingColor, egp, GAIN, hexToRgb, LOSS, num, pct, RISK_COLOR, sequentialColor } from "./format";
+
+const BASEMAP = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const CAIRO = { lat: 30.04, lng: 31.24, zoom: 10.5 };
+
+export type LayerToggles = {
+  flows: boolean;
+  rent: boolean;
+  footfall: boolean;
+  microbus: boolean;
+  allMicrobus: boolean;
+};
+
+type Props = {
+  baseline: Baseline | null;
+  result: EvalResult | null;
+  lines: DraftLine[];
+  activeId: string;
+  drawing: boolean;
+  view: "before" | "after";
+  toggles: LayerToggles;
+  onAddStation: (lat: number, lng: number) => void;
+  onRemoveStation: (lineId: string, idx: number) => void;
+};
+
+type StreetRow = {
+  street_id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  R0_total: number;
+  res?: StreetResult;
+};
+
+type DrawnStation = { lineId: string; idx: number; lat: number; lng: number; color: string; riders?: number; active: boolean };
+
+function streetRadius(R0: number): number {
+  return 35 + 5 * Math.sqrt(Math.max(R0, 0) / 1e6); // metres
+}
+
+export default function MapView(props: Props) {
+  const container = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const overlayRef = useRef<MapboxOverlay | null>(null);
+  // handlers read through a ref so the map listeners never go stale
+  const live = useRef(props);
+  live.current = props;
+
+  useEffect(() => {
+    if (!container.current) return;
+    const map = new maplibregl.Map({
+      container: container.current,
+      style: BASEMAP,
+      center: [CAIRO.lng, CAIRO.lat],
+      zoom: CAIRO.zoom,
+      attributionControl: { compact: true },
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
+    map.addControl(overlay);
+    map.on("click", (e) => {
+      if (!live.current.drawing) return;
+      live.current.onAddStation(e.lngLat.lat, e.lngLat.lng);
+    });
+    map.on("contextmenu", (e) => {
+      const info = overlay.pickObject({ x: e.point.x, y: e.point.y, radius: 6, layerIds: ["drawn-stations"] });
+      const st = info?.object as DrawnStation | undefined;
+      if (st) live.current.onRemoveStation(st.lineId, st.idx);
+    });
+    // MapLibre only listens to window resizes; follow the container instead (sidebar, first layout).
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(container.current);
+    mapRef.current = map;
+    overlayRef.current = overlay;
+    return () => {
+      ro.disconnect();
+      map.remove();
+      mapRef.current = null;
+      overlayRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = props.drawing ? "crosshair" : "";
+  }, [props.drawing]);
+
+  const { baseline, result, lines, activeId, view, toggles } = props;
+  const after = view === "after" && result !== null;
+
+  const streets: StreetRow[] = useMemo(() => {
+    if (!baseline) return [];
+    const byId = new Map(result?.streets.map((s) => [s.street_id, s]) ?? []);
+    return baseline.streets
+      .map((s) => ({ ...s, res: byId.get(s.street_id) }))
+      .sort((a, b) => Math.abs(a.res?.dR_pct ?? 0) - Math.abs(b.res?.dR_pct ?? 0)); // changed ones on top
+  }, [baseline, result]);
+
+  const drawnStations: DrawnStation[] = useMemo(() => {
+    const riders = new Map(result?.stations.map((s) => [`${s.line_id}:${s.idx}`, s.riders_daily]) ?? []);
+    return lines
+      .filter((l) => l.visible)
+      .flatMap((l) =>
+        l.stations.map((s, idx) => ({
+          lineId: l.id,
+          idx,
+          lat: s.lat,
+          lng: s.lng,
+          color: l.color,
+          riders: riders.get(`${l.id}:${idx}`),
+          active: l.id === activeId,
+        })),
+      );
+  }, [lines, result, activeId]);
+
+  const microbusHit = useMemo(() => {
+    if (!baseline || !result) return null;
+    const status = new Map(
+      result.microbus_routes.filter((r) => r.status !== "unaffected").map((r) => [r.route_id, r]),
+    );
+    return {
+      type: "FeatureCollection" as const,
+      features: baseline.microbus_routes.features
+        .filter((f) => status.has(f.properties.route_id))
+        .map((f) => ({ ...f, properties: { ...f.properties, ...status.get(f.properties.route_id)! } })),
+    };
+  }, [baseline, result]);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const layers: (Layer | false | null | undefined)[] = [];
+    if (baseline) {
+      layers.push(
+        toggles.allMicrobus &&
+          new GeoJsonLayer({
+            id: "microbus-all",
+            data: baseline.microbus_routes as never,
+            getLineColor: [120, 120, 120, 35],
+            lineWidthMinPixels: 1,
+          }),
+        new GeoJsonLayer({
+          id: "existing-lines",
+          data: baseline.existing_network as never,
+          getLineColor: [90, 90, 90, 200],
+          lineWidthMinPixels: 3,
+        }),
+        new ScatterplotLayer({
+          id: "existing-stations",
+          data: baseline.existing_stations,
+          getPosition: (d) => [d.lng, d.lat],
+          getRadius: 3.5,
+          radiusUnits: "pixels",
+          getFillColor: [255, 255, 255],
+          getLineColor: [90, 90, 90],
+          stroked: true,
+          lineWidthMinPixels: 1.5,
+          pickable: true,
+        }),
+      );
+    }
+    if (result && after) {
+      layers.push(
+        toggles.microbus &&
+          microbusHit &&
+          new GeoJsonLayer({
+            id: "microbus-hit",
+            data: microbusHit as never,
+            getLineColor: (f: { properties: { status: string } }) =>
+              f.properties.status === "competing" ? [240, 120, 0, 210] : [40, 160, 70, 190],
+            lineWidthMinPixels: 2.5,
+            pickable: true,
+          }),
+        toggles.rent &&
+          new H3HexagonLayer({
+            id: "rent-hexes",
+            data: result.hexes,
+            getHexagon: (d) => d.h3,
+            getFillColor: (d) => sequentialColor(d.rent_pct, Math.max(result.totals.max_rent_pct, 0.5), 150),
+            stroked: false,
+            extruded: false,
+            pickable: true,
+          }),
+        toggles.footfall &&
+          new H3HexagonLayer({
+            id: "footfall-cells",
+            data: result.footfall_cells,
+            getHexagon: (d) => d.h3,
+            getFillColor: (d) =>
+              sequentialColor(d.footfall_daily, Math.max(...result.footfall_cells.map((c) => c.footfall_daily), 1), 140),
+            stroked: false,
+            extruded: false,
+            pickable: true,
+          }),
+      );
+    }
+    layers.push(
+      new ScatterplotLayer<StreetRow>({
+        id: "streets",
+        data: streets,
+        getPosition: (d) => [d.lng, d.lat],
+        getRadius: (d) => streetRadius(d.R0_total),
+        radiusUnits: "meters",
+        radiusMinPixels: 2,
+        radiusMaxPixels: 26,
+        getFillColor: (d) => (after ? divergingColor(d.res?.dR_pct ?? 0) : [120, 120, 120, 110]),
+        stroked: true,
+        getLineColor: (d) => (after && d.res?.risk === "red" ? [120, 0, 0, 255] : [255, 255, 255, 160]),
+        getLineWidth: (d) => (after && d.res?.risk === "red" ? 2.5 : 0.5),
+        lineWidthUnits: "pixels",
+        pickable: true,
+        updateTriggers: { getFillColor: [after, result], getLineColor: [after, result], getLineWidth: [after, result] },
+      }),
+    );
+    if (result && after && toggles.flows) {
+      const maxFlow = Math.max(...result.flows.map((f) => Math.abs(f.egp)), 1);
+      layers.push(
+        new ArcLayer({
+          id: "flows",
+          data: result.flows,
+          getSourcePosition: (d) => d.from,
+          getTargetPosition: (d) => d.to,
+          getSourceColor: (d) => (d.egp < 0 ? LOSS : GAIN),
+          getTargetColor: (d) => (d.egp < 0 ? LOSS : GAIN),
+          getWidth: (d) => 1 + (6 * Math.abs(d.egp)) / maxFlow,
+          widthUnits: "pixels",
+          pickable: true,
+        }),
+      );
+    }
+    layers.push(
+      new PathLayer<DraftLine>({
+        id: "drawn-lines",
+        data: lines.filter((l) => l.visible && l.stations.length >= 2),
+        getPath: (l) => l.stations.map((s) => [s.lng, s.lat] as [number, number]),
+        getColor: (l) => hexToRgb(l.color, l.id === activeId ? 255 : 190),
+        getWidth: (l) => (l.id === activeId ? 6 : 4),
+        widthUnits: "pixels",
+        capRounded: true,
+        jointRounded: true,
+        updateTriggers: { getColor: activeId, getWidth: activeId },
+      }),
+      new ScatterplotLayer<DrawnStation>({
+        id: "drawn-stations",
+        data: drawnStations,
+        getPosition: (d) => [d.lng, d.lat],
+        getRadius: (d) => (after && d.riders ? 5 + Math.sqrt(d.riders) / 18 : 6),
+        radiusUnits: "pixels",
+        getFillColor: (d) => hexToRgb(d.color),
+        stroked: true,
+        getLineColor: [255, 255, 255],
+        lineWidthMinPixels: 2,
+        pickable: true,
+        updateTriggers: { getRadius: [after, result] },
+      }),
+    );
+    overlay.setProps({ layers: layers.filter(Boolean) as Layer[], getTooltip: tooltip });
+  }, [baseline, result, after, toggles, streets, lines, drawnStations, activeId, microbusHit]);
+
+  return <div ref={container} className="map" />;
+}
+
+function row(label: string, value: string) {
+  return `<div class="tt-row"><span>${label}</span><b>${value}</b></div>`;
+}
+
+function esc(s: string) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+function tooltip(info: PickingInfo) {
+  const o = info.object as Record<string, any> | undefined;
+  if (!o || !info.layer) return null;
+  let html = "";
+  switch (info.layer.id) {
+    case "streets": {
+      const r: StreetResult | undefined = o.res;
+      html = `<div class="tt-title">${esc(o.name)}</div>` + row("Baseline spending", egp(o.R0_total) + "/yr");
+      if (r) {
+        html +=
+          row("Change", `${egp(r.dR_egp, true)} (${pct(r.dR_pct)})`) +
+          (r.passby_egp ? row("Pass-by from stations", egp(r.passby_egp, true)) : "") +
+          row("Rent index", pct(r.rent_pct)) +
+          row("Risk", `<span style="color:${RISK_COLOR[r.risk]}">${r.risk}</span>`) +
+          (r.local_loser ? `<div class="tt-note">Loses although a new station is close (two-way road)</div>` : "");
+      }
+      break;
+    }
+    case "drawn-stations":
+      html =
+        `<div class="tt-title">Line ${esc(o.lineId)} · station ${o.idx + 1}</div>` +
+        (o.riders ? row("Riders / day", num(o.riders)) : "") +
+        `<div class="tt-note">Right-click to delete</div>`;
+      break;
+    case "existing-stations":
+      html = `<div class="tt-title">${esc(o.name)}</div>` + row("Line", esc(o.line)) + row("Residents ≤ 10 min walk", num(o.catchment_pop10));
+      break;
+    case "microbus-hit":
+      html =
+        `<div class="tt-title">Microbus ${esc(String(o.properties.route_id))}</div>` +
+        row("Status", o.properties.status) +
+        row("Trips that would switch", pct(100 * o.properties.share_at_risk, 0).replace("+", ""));
+      break;
+    case "rent-hexes":
+      html = row("Rent index", pct(o.rent_pct)) + row("At opening", pct(o.rent_pct_opening));
+      break;
+    case "footfall-cells":
+      html = row("Station footfall / day", num(o.footfall_daily));
+      break;
+    case "flows":
+      html = row(o.egp < 0 ? "Spending lost to this street" : "Spending gained by this street", egp(o.egp, true) + "/yr");
+      break;
+    default:
+      return null;
+  }
+  return {
+    html,
+    className: "tooltip",
+    style: { backgroundColor: "#fff", color: "#222", padding: "8px 10px", borderRadius: "6px", fontSize: "12px", boxShadow: "0 2px 10px rgba(0,0,0,.2)", maxWidth: "280px" },
+  };
+}
