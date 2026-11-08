@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-data/raw/
+# data/raw is committed via Git LFS (see .gitattributes), except the full Egypt extract
+data/raw/egypt-latest.osm.pbf
+data/raw/**/.DS_Store
 data/interim/
 logs/
 web/node_modules/
